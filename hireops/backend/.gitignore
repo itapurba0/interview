@@ -22,3 +22,5 @@ node_modules/
 .git/
 app/__pycache__/
 app/*.pyc
+app/api/__pycache__/
+app/api/*.pyc
