@@ -10,7 +10,7 @@ from passlib.context import CryptContext
 
 from app.api.v1.candidates import _profiles as candidate_profiles
 from app.db import get_db
-from app.models import User, UserRole, Company
+from app.models import User, UserRole, Company, Candidate
 from pydantic import BaseModel, EmailStr
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -93,6 +93,10 @@ async def register_candidate(
 
     if user_role == UserRole.CANDIDATE.value:
         candidate_profiles[new_user.id] = {}
+        # Create Candidate profile record in database
+        new_candidate = Candidate(user_id=new_user.id)
+        db.add(new_candidate)
+        await db.commit()
     
     # 3. Issue Token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

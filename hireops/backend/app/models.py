@@ -57,6 +57,30 @@ class User(Base):
 
     company: Mapped[Optional["Company"]] = relationship(back_populates="users")
     applications: Mapped[List["Application"]] = relationship(back_populates="candidate", cascade="all, delete-orphan")
+    candidate_profile: Mapped[Optional["Candidate"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+class Candidate(Base):
+    """
+    Stores structured resume profile data extracted by the AI resume parser.
+    One-to-one relationship with User (only for users with role=CANDIDATE).
+    """
+    __tablename__ = "candidates"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    
+    # Resume parsing results
+    resume_text: Mapped[Optional[str]] = mapped_column(Text)
+    technical_skills: Mapped[Optional[List[str]]] = mapped_column(JSON)
+    soft_skills: Mapped[Optional[List[str]]] = mapped_column(JSON)
+    experience_years: Mapped[Optional[float]] = mapped_column()
+    education: Mapped[Optional[dict]] = mapped_column(JSON)
+    overall_score: Mapped[Optional[int]] = mapped_column(Integer)  # Parser score (0-100)
+    
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user: Mapped["User"] = relationship(back_populates="candidate_profile")
 
 class Job(Base):
     """

@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 from sqlalchemy import text
 
 from app.db import engine, AsyncSessionLocal
-from app.models import Base, User, Company, UserRole
+from app.models import Base, User, Company, UserRole, Candidate
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -96,12 +96,14 @@ from app.api.v1.assessments import router as assessments_router
 from app.api.v1.candidates import router as candidates_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.applications import router as applications_router
 
 app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
 app.include_router(assessments_router, prefix="/api/v1", tags=["assessments"])
 app.include_router(candidates_router, prefix="/api/v1", tags=["candidates"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["analytics"])
 app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
+app.include_router(applications_router, prefix="/api/v1", tags=["applications"])
 
 # NOTE: Placeholder for future routers.
 # from app.api.v1 import auth, proctoring

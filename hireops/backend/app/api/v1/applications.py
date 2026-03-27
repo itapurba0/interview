@@ -1,0 +1,147 @@
+"""
+Job Applications API — HireOps Platform
+POST /api/v1/applications — Submit a job application with 75% match threshold enforcement.
+GET /api/v1/applications — Retrieve applications for current user.
+"""
+
+from typing import Annotated, Optional
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from datetime import datetime
+
+from app.db import get_db
+from app.models import User, Candidate, Job, Application, ApplicationStatus
+from app.api.dependencies import get_current_user
+from app.services.resume_parser import calculate_job_match
+
+router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
+class ApplicationCreate(BaseModel):
+    """Schema for submitting a job application."""
+    job_id: int
+
+
+class ApplicationOut(BaseModel):
+    """Schema for returning application data."""
+    id: int
+    candidate_id: int
+    job_id: int
+    status: str
+    ai_match_score: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+@router.post("/applications", response_model=ApplicationOut, status_code=status.HTTP_201_CREATED)
+async def create_application(
+    payload: ApplicationCreate,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit a job application with 75% match threshold enforcement.
+    
+    Flow:
+    1. Verify user is a CANDIDATE
+    2. Load the Candidate profile (must have uploaded resume)
+    3. Load the Job posting
+    4. Calculate match score
+    5. If score < 75%, reject with 403
+    6. Otherwise, create Application record
+    """
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can apply for jobs."
+        )
+    
+    # Load Candidate profile
+    candidate_result = await db.execute(
+        select(Candidate).where(Candidate.user_id == current_user.id)
+    )
+    candidate = candidate_result.scalar_one_or_none()
+    
+    if not candidate or not candidate.technical_skills:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload a resume first before applying."
+        )
+    
+    # Load Job
+    job_result = await db.execute(select(Job).where(Job.id == payload.job_id))
+    job = job_result.scalar_one_or_none()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found."
+        )
+    
+    # Calculate match score
+    candidate_dict = {
+        "technical_skills": candidate.technical_skills or [],
+        "soft_skills": candidate.soft_skills or [],
+        "experience_years": candidate.experience_years
+    }
+    
+    match_score = calculate_job_match(candidate_dict, job.description)
+    
+    # Enforce 75% threshold (The Bouncer)
+    if match_score < 75:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Match score is {match_score}%. A minimum of 75% is required to apply for this role."
+        )
+    
+    # Create Application record
+    application = Application(
+        candidate_id=current_user.id,
+        job_id=job.id,
+        status=ApplicationStatus.APPLIED,
+        ai_match_score=match_score
+    )
+    
+    db.add(application)
+    await db.commit()
+    await db.refresh(application)
+    
+    return ApplicationOut.model_validate(application)
+
+
+@router.get("/applications")
+async def get_user_applications(
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve all applications for the current user (candidate or hr/manager).
+    
+    Candidates see applications they submitted.
+    HR/Managers see applications for jobs in their company.
+    """
+    if current_user.role.value == "CANDIDATE":
+        # Candidates see their own applications
+        result = await db.execute(
+            select(Application).where(Application.candidate_id == current_user.id)
+        )
+    else:
+        # HR/Managers see applications for their company's jobs
+        result = await db.execute(
+            select(Application).join(Job).where(Job.company_id == current_user.company_id)
+        )
+    
+    applications = result.scalars().all()
+    
+    return [ApplicationOut.model_validate(app) for app in applications]

@@ -11,7 +11,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
  */
 function getCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
-  
+
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) return parts.pop()?.split(";").shift();
@@ -42,13 +42,14 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
   const response = await fetch(url, {
     ...options,
     headers,
+    credentials: options.credentials || "include",
   });
 
   // 3. Centralized Error Handling
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     console.error(`API Error [${response.status}]:`, errorData);
-    
+
     // Explicit 401 handling (e.g., token expired)
     if (response.status === 401) {
       // Clear session and Force logout if necessary
@@ -56,7 +57,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
         document.cookie = "hireops_session=; path=/; max-age=0;";
       }
     }
-    
+
     throw new Error(errorData.detail || `Request failed with status ${response.status}`);
   }
 

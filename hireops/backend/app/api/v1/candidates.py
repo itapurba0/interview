@@ -2,11 +2,20 @@
 Candidates Profile API — HireOps Platform
 PUT /candidates/profile — Update candidate profile (resume, links, skills).
 GET /candidates/profile — Retrieve current candidate profile.
+POST /candidates/me/resume — Upload and parse resume PDF.
 """
 
-from typing import Optional
+from typing import Optional, Annotated
 from pydantic import BaseModel
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.db import get_db
+from app.models import User, Candidate
+from app.api.dependencies import get_current_user
+from app.services.resume_parser import parse_resume_pdf
+from app.schemas.candidate import CandidateOut
 
 router = APIRouter()
 
@@ -84,3 +93,66 @@ async def update_candidate_profile(payload: CandidateProfileUpdate, candidate_id
         skills=existing.get("skills", []),
         profile_complete=has_data,
     )
+
+
+@router.post("/candidates/me/resume", response_model=CandidateOut)
+async def upload_and_parse_resume(
+    file: UploadFile = File(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload a resume PDF and parse it to extract skills, experience, and education.
+    
+    Stores the parsed data in the Candidate record for the current user.
+    Only accessible to users with role=CANDIDATE.
+    """
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can upload resumes."
+        )
+    
+    # Read file bytes
+    try:
+        resume_bytes = await file.read()
+        if not resume_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Resume file is empty."
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error reading file: {str(e)}"
+        )
+    
+    # Parse resume
+    try:
+        parsed_data = parse_resume_pdf(resume_bytes)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Error parsing resume PDF: {str(e)}"
+        )
+    
+    # Find or create Candidate record
+    result = await db.execute(select(Candidate).where(Candidate.user_id == current_user.id))
+    candidate = result.scalar_one_or_none()
+    
+    if not candidate:
+        candidate = Candidate(user_id=current_user.id)
+        db.add(candidate)
+    
+    # Update with parsed data
+    candidate.resume_text = parsed_data.get("resume_text")
+    candidate.technical_skills = parsed_data.get("technical_skills")
+    candidate.soft_skills = parsed_data.get("soft_skills")
+    candidate.experience_years = parsed_data.get("experience_years")
+    candidate.education = parsed_data.get("education")
+    candidate.overall_score = parsed_data.get("overall_score")
+    
+    await db.commit()
+    await db.refresh(candidate)
+    
+    return CandidateOut.model_validate(candidate)

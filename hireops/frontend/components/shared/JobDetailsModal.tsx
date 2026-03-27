@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { 
-  Building, 
-  MapPin, 
-  Clock, 
-  Sparkles, 
-  Loader2, 
+import Link from "next/link";
+import {
+  Building,
+  MapPin,
+  Clock,
+  Sparkles,
+  Loader2,
   CheckCircle2,
-  Users
+  Users,
+  AlertCircle,
+  Upload
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { GlassModal } from "@/components/ui/GlassModal";
@@ -33,6 +37,31 @@ export function JobDetailsModal({
   onApply,
 }: JobDetailsModalProps) {
   const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState(hasApplied);
+
+  const handleApplyClick = async () => {
+    if (!onApply) return;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await onApply(job.id);
+      setApplied(true);
+    } catch (err: unknown) {
+      let errorMessage = "An error occurred while applying. Please try again.";
+
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (!job) return null;
 
@@ -70,9 +99,9 @@ export function JobDetailsModal({
               </div>
             </div>
             {viewerRole === "HR" && (
-               <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] text-indigo-400 font-bold uppercase tracking-widest">
-                 HR PREVIEW
-               </span>
+              <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] text-indigo-400 font-bold uppercase tracking-widest">
+                HR PREVIEW
+              </span>
             )}
           </div>
         </div>
@@ -112,65 +141,97 @@ export function JobDetailsModal({
 
       {/* Conditional Sticky Footer for Candidates */}
       {viewerRole === "CANDIDATE" && (
-        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-neutral-900 via-neutral-900/90 to-transparent border-t border-neutral-800/50 flex justify-end gap-4 rounded-b-3xl">
-           <button 
-             onClick={onClose}
-             className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 hover:text-white transition-colors"
-           >
-             Cancel
-           </button>
-           
-           {!hasApplied ? (
-             <motion.button
-               whileHover={{ scale: 1.02 }}
-               whileTap={{ scale: 0.98 }}
-               onClick={() => onApply && onApply(job.id)}
-               disabled={isApplying}
-               className="flex items-center gap-2 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:bg-indigo-400 transition-colors disabled:opacity-70"
-             >
-               {isApplying ? (
-                 <>
-                   <Loader2 className="w-5 h-5 animate-spin" />
-                   Submitting Application…
-                 </>
-               ) : (
-                 <>
-                   <Sparkles className="w-5 h-5" />
-                   Apply for this Role
-                 </>
-               )}
-             </motion.button>
-           ) : (
-             <div className="flex items-center gap-2 px-8 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-bold text-sm cursor-not-allowed">
-               <CheckCircle2 className="w-5 h-5" />
-               Application Submitted
-             </div>
-           )}
+        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-neutral-900 via-neutral-900/90 to-transparent border-t border-neutral-800/50 rounded-b-3xl">
+          {/* Error Alert */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3"
+            >
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-300 text-sm font-medium">{error}</p>
+
+                {/* Resume Upload CTA */}
+                {error.includes("Please upload a resume first") && (
+                  <Link href="/candidate/profile">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={onClose}
+                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload Resume
+                    </motion.button>
+                  </Link>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-4">
+            <button
+              onClick={onClose}
+              className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+
+            {!applied ? (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleApplyClick}
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:bg-indigo-400 transition-colors disabled:opacity-70"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Submitting Application…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    Apply for this Role
+                  </>
+                )}
+              </motion.button>
+            ) : (
+              <div className="flex items-center gap-2 px-8 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-bold text-sm cursor-not-allowed">
+                <CheckCircle2 className="w-5 h-5" />
+                Application Submitted
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Conditional Sticky Footer for HR */}
       {viewerRole === "HR" && (
         <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-neutral-900 via-neutral-900/90 to-transparent border-t border-neutral-800/50 flex justify-end gap-4 rounded-b-3xl">
-           <button 
-             onClick={onClose}
-             className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 hover:text-white transition-colors"
-           >
-             Close
-           </button>
-           
-           <motion.button
-             whileHover={{ scale: 1.02 }}
-             whileTap={{ scale: 0.98 }}
-             onClick={() => {
-               onClose();
-               router.push(`/hr/jobs/${job.id}`);
-             }}
-             className="flex items-center gap-2 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:bg-indigo-400 transition-colors"
-           >
-             <Users className="w-5 h-5" />
-             View Candidate Pipeline
-           </motion.button>
+          <button
+            onClick={onClose}
+            className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 hover:text-white transition-colors"
+          >
+            Close
+          </button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              onClose();
+              router.push(`/hr/jobs/${job.id}`);
+            }}
+            className="flex items-center gap-2 px-8 py-3 bg-indigo-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:bg-indigo-400 transition-colors"
+          >
+            <Users className="w-5 h-5" />
+            View Candidate Pipeline
+          </motion.button>
         </div>
       )}
     </GlassModal>

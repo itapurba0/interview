@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { fetchApi } from "@/lib/api";
 import {
   Upload,
   Globe,
@@ -24,6 +25,8 @@ import {
 interface ProfileData {
   candidate_id: number;
   resume_filename: string | null;
+  name: string | null;
+  photo_url: string | null;
   github_url: string | null;
   linkedin_url: string | null;
   skills: string[];
@@ -55,6 +58,9 @@ export default function CandidateProfileForm({
   // Form state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumeFilename, setResumeFilename] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [githubUrl, setGithubUrl] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
@@ -64,7 +70,9 @@ export default function CandidateProfileForm({
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [parseSuccess, setParseSuccess] = useState(false);
   const [error, setError] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,14 +82,15 @@ export default function CandidateProfileForm({
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch("/api/v1/candidates/profile");
-        if (res.ok) {
-          const data: ProfileData = await res.json();
-          if (data.resume_filename) setResumeFilename(data.resume_filename);
-          if (data.github_url) setGithubUrl(data.github_url);
-          if (data.linkedin_url) setLinkedinUrl(data.linkedin_url);
-          if (data.skills.length) setSkills(data.skills);
-        }
+        const data = await fetchApi<ProfileData>("/api/v1/candidates/profile", {
+          credentials: "include",
+        });
+        if (data.resume_filename) setResumeFilename(data.resume_filename);
+        if (data.name) setName(data.name);
+        if (data.photo_url) setPhotoUrl(data.photo_url);
+        if (data.github_url) setGithubUrl(data.github_url);
+        if (data.linkedin_url) setLinkedinUrl(data.linkedin_url);
+        if (data.skills.length) setSkills(data.skills);
       } catch {
         // First time — no profile yet
       } finally {
@@ -112,6 +121,68 @@ export default function CandidateProfileForm({
       setResumeFile(file);
       setResumeFilename(file.name);
       setError("");
+
+      // Parse resume with backend AI
+      parseResumeFile(file);
+    }
+  };
+
+  const parseResumeFile = async (file: File) => {
+    setIsParsing(true);
+    setParseSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const data = await fetchApi<{
+        resume_text: string;
+        technical_skills: string[];
+        soft_skills: string[];
+        experience_years: number;
+        education: Record<string, unknown>;
+        overall_score: number;
+      }>("/api/v1/candidates/me/resume", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+        // Note: Don't set Content-Type header; browser will auto-set with multipart/form-data boundary
+      });
+
+      // Auto-populate form fields from parsed resume data
+      // Name extraction (if available in parsed data)
+      if (data.resume_text) {
+        // Try to extract name from first line or dedicated name field
+        const lines = data.resume_text.split('\n');
+        const firstLine = lines[0]?.trim();
+
+        // If first line looks like a name (no special chars, reasonable length)
+        if (firstLine && firstLine.length < 50 && /^[a-zA-Z\s]+$/.test(firstLine)) {
+          setName(firstLine);
+        }
+      }
+
+      // Technical skills auto-population
+      if (data.technical_skills && data.technical_skills.length > 0) {
+        setSkills((prev) => {
+          const newSkills = [...prev];
+          data.technical_skills.forEach((skill: string) => {
+            if (!newSkills.includes(skill)) {
+              newSkills.push(skill);
+            }
+          });
+          return newSkills;
+        });
+      }
+
+      // Show success message
+      setParseSuccess(true);
+      setTimeout(() => setParseSuccess(false), 4000);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to parse resume";
+      setError(errorMessage);
+    } finally {
+      setIsParsing(false);
     }
   };
 
@@ -119,6 +190,40 @@ export default function CandidateProfileForm({
     setResumeFile(null);
     setResumeFilename(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Photo handling ────────────────────────────────────────────
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate type
+      const validImageTypes = ["image/jpeg", "image/png", "image/webp"];
+      if (!validImageTypes.includes(file.type)) {
+        setError("Please upload a JPEG, PNG, or WebP image.");
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        setError("Photo must be under 2MB.");
+        return;
+      }
+
+      setPhotoFile(file);
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      setError("");
+    }
+  };
+
+  const removePhoto = () => {
+    setPhotoFile(null);
+    setPhotoUrl(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
   };
 
   // ── Skills management ─────────────────────────────────────────
@@ -143,6 +248,10 @@ export default function CandidateProfileForm({
 
   // ── Submit ────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
     if (skills.length === 0) {
       setError("Add at least one skill to your profile.");
       return;
@@ -153,18 +262,18 @@ export default function CandidateProfileForm({
     setSuccess(false);
 
     try {
-      const res = await fetch("/api/v1/candidates/profile", {
+      await fetchApi("/api/v1/candidates/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           resume_filename: resumeFilename,
+          name: name || null,
+          photo_url: photoUrl || null,
           github_url: githubUrl || null,
           linkedin_url: linkedinUrl || null,
           skills,
         }),
       });
-
-      if (!res.ok) throw new Error("Failed to update profile");
 
       setSuccess(true);
       setTimeout(() => {
@@ -185,6 +294,7 @@ export default function CandidateProfileForm({
   // ── Completion percentage ─────────────────────────────────────
   const completionSteps = [
     !!resumeFilename,
+    !!name,
     !!githubUrl,
     !!linkedinUrl,
     skills.length > 0,
@@ -270,37 +380,53 @@ export default function CandidateProfileForm({
             type="file"
             accept=".pdf,.doc,.docx"
             onChange={handleFileSelect}
+            disabled={isParsing}
             className="hidden"
           />
 
           {resumeFilename ? (
-            <div className="flex items-center justify-between bg-indigo-500/5 border border-indigo-500/15 rounded-xl px-4 py-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-indigo-400" />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between bg-indigo-500/5 border border-indigo-500/15 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-neutral-200 font-medium truncate max-w-[300px]">
+                      {resumeFilename}
+                    </p>
+                    <p className="text-[10px] text-neutral-500">
+                      {resumeFile ? `${(resumeFile.size / 1024).toFixed(0)} KB` : "Uploaded"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-neutral-200 font-medium truncate max-w-[300px]">
-                    {resumeFilename}
-                  </p>
-                  <p className="text-[10px] text-neutral-500">
-                    {resumeFile ? `${(resumeFile.size / 1024).toFixed(0)} KB` : "Uploaded"}
-                  </p>
-                </div>
+                <button
+                  onClick={removeResume}
+                  disabled={isParsing}
+                  className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={removeResume}
-                className="p-1.5 text-neutral-500 hover:text-red-400 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              {isParsing && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 text-xs text-indigo-400 bg-indigo-950/30 border border-indigo-500/20 rounded-xl px-3 py-2"
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ✨ Analyzing resume with AI…
+                </motion.div>
+              )}
             </div>
           ) : (
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex flex-col items-center justify-center py-8 border-2 border-dashed border-neutral-800/60 rounded-xl text-neutral-500 hover:border-indigo-500/30 hover:text-indigo-400 transition-all group"
+              disabled={isParsing}
+              className="w-full flex flex-col items-center justify-center py-8 border-2 border-dashed border-neutral-800/60 rounded-xl text-neutral-500 hover:border-indigo-500/30 hover:text-indigo-400 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Upload className="w-6 h-6 mb-2 group-hover:scale-110 transition-transform" />
               <span className="text-sm font-medium">Upload Resume</span>
@@ -309,6 +435,82 @@ export default function CandidateProfileForm({
               </span>
             </motion.button>
           )}
+        </div>
+
+        {/* ── Full Name ─────────────────────────────────────────── */}
+        <div className="bg-neutral-900/40 border border-neutral-800/50 rounded-2xl p-5 backdrop-blur-sm">
+          <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+            <User className="w-3 h-3" />
+            Full Name
+          </label>
+          <div className="relative">
+            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="John Doe"
+              className="w-full bg-neutral-950/50 border border-neutral-800/50 rounded-xl pl-10 pr-4 py-3 text-sm text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/40 transition-colors"
+            />
+            {name && (
+              <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+            )}
+          </div>
+        </div>
+
+        {/* ── Profile Photo (Optional) ──────────────────────────── */}
+        <div className="bg-neutral-900/40 border border-neutral-800/50 rounded-2xl p-5 backdrop-blur-sm">
+          <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-1.5">
+            <Upload className="w-3 h-3" />
+            Profile Photo <span className="text-neutral-600">(Optional)</span>
+          </label>
+
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoSelect}
+            className="hidden"
+          />
+
+          <div className="flex items-center gap-4">
+            {/* Avatar Preview */}
+            <div className="relative">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border-2 border-indigo-500/20 flex items-center justify-center overflow-hidden shrink-0">
+                {photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-10 h-10 text-neutral-600" />
+                )}
+              </div>
+              {photoUrl && (
+                <button
+                  onClick={removePhoto}
+                  className="absolute -top-2 -right-2 p-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded-full transition-colors shadow-lg"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Upload Button */}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => photoInputRef.current?.click()}
+              className="flex-1 flex flex-col items-center justify-center py-6 border-2 border-dashed border-neutral-800/60 rounded-xl text-neutral-500 hover:border-indigo-500/30 hover:text-indigo-400 transition-all group"
+            >
+              <Upload className="w-5 h-5 mb-1.5 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-medium">Upload Photo</span>
+              <span className="text-[9px] text-neutral-600 mt-0.5">
+                JPG, PNG or WebP • Max 2MB
+              </span>
+            </motion.button>
+          </div>
         </div>
 
         {/* ── GitHub URL ────────────────────────────────────────── */}
@@ -462,6 +664,18 @@ export default function CandidateProfileForm({
             >
               <AlertCircle className="w-4 h-4 shrink-0" />
               {error}
+            </motion.div>
+          )}
+
+          {parseSuccess && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="flex items-center gap-2 text-xs text-indigo-400 bg-indigo-950/30 border border-indigo-500/20 rounded-xl px-4 py-3"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              Resume parsed successfully! Skills auto-populated.
             </motion.div>
           )}
 

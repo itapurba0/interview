@@ -117,7 +117,6 @@ function CandidateDashboardContent() {
     if (applications[jobId] || applyingFor[jobId]) return;
 
     setApplyingFor((prev) => ({ ...prev, [jobId]: true }));
-    addToast("Application submitted for AI Screening.", "info");
 
     try {
       const res = await fetch("/api/v1/applications", {
@@ -126,24 +125,24 @@ function CandidateDashboardContent() {
         body: JSON.stringify({ job_id: jobId }),
       });
 
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      const data = await res.json();
 
-      const result: ApplicationResult = await res.json();
-      setApplications((prev) => ({ ...prev, [jobId]: result }));
-
-      if (result.ai_match_score >= 75) {
-        addToast(
-          `AI Match: ${result.ai_match_score}% — Cleared for Proctored Testing!`,
-          "success"
-        );
-      } else {
-        addToast(
-          `AI Match: ${result.ai_match_score}% — Below threshold. Application rejected.`,
-          "error"
-        );
+      if (!res.ok) {
+        // Extract error detail from API response and throw
+        const errorDetail = data.detail || `API error: ${res.status}`;
+        throw new Error(errorDetail);
       }
-    } catch {
-      addToast("Failed to submit application. Is the backend running?", "error");
+
+      const result: ApplicationResult = data;
+      setApplications((prev) => ({ ...prev, [jobId]: result }));
+      addToast(
+        `AI Match: ${result.ai_match_score}% — Cleared for Proctored Testing!`,
+        "success"
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to submit application";
+      // Re-throw so modal can catch and display error details
+      throw new Error(errorMessage);
     } finally {
       setApplyingFor((prev) => ({ ...prev, [jobId]: false }));
     }
@@ -216,7 +215,7 @@ function CandidateDashboardContent() {
         </motion.div>
       </motion.div>
 
-      <JobDetailsModal 
+      <JobDetailsModal
         isOpen={!!selectedJob}
         onClose={() => setSelectedJob(null)}
         job={selectedJob}
@@ -231,7 +230,7 @@ function CandidateDashboardContent() {
 
 export default function CandidateDashboard() {
   return (
-    <Suspense 
+    <Suspense
       fallback={
         <div className="flex flex-col flex-1 items-center justify-center min-h-[60vh] gap-4 text-neutral-400 p-8">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
