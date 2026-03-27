@@ -11,55 +11,43 @@ This document outlines the system architecture for **HireOps** across five prima
 This diagram demonstrates how the codebase is logically separated. The Next.js frontend acts as the Presentation Layer, communicating via REST/WebSockets to the FastAPI API Gateway. Business logic is isolated in core services or delegated to background tasks.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryTextColor': '#000000', 'lineColor': '#000000' }}}%%
 flowchart TD
-    classDef presentation fill:#e0f2fe,stroke:#0284c7,color:#000000,stroke-width:2px;
-    classDef logic fill:#dcfce7,stroke:#16a34a,color:#000000,stroke-width:2px;
-    classDef data fill:#ffedd5,stroke:#ea580c,color:#000000,stroke-width:2px;
-    classDef external fill:#f3f4f6,stroke:#4b5563,color:#000000,stroke-width:2px;
-
     subgraph Presentation_Layer["Presentation Layer (Next.js 14)"]
-        UI["UI Components (React/Tailwind)"]:::presentation
-        State["State Management (Zustand)"]:::presentation
-        ClientAPI["API Client (Axios/Fetch)"]:::presentation
+        UI["UI Components (React/Tailwind)"]
+        State["State Management (Zustand)"]
+        ClientAPI["API Client (Axios/Fetch)"]
         
         UI <--> State
         State <--> ClientAPI
     end
 
     subgraph API_Layer["API Layer (FastAPI)"]
-        Router["API Routers (v1)"]:::logic
-        AuthCtx["Auth & Permissions"]:::logic
+        Router["API Routers (v1)"]
+        AuthCtx["Auth & Permissions"]
         
         Router <--> AuthCtx
     end
 
     subgraph Business_Layer["Business Logic Layer"]
-        Services["Core Services (Workflow/Agentic)"]:::logic
-        TaskQueue["Task Delegation (Celery Async)"]:::logic
+        Services["Core Services (Workflow/Agentic Progression)"]
+        TaskQueue["Task Delegation (Celery Async)"]
     end
 
     subgraph Data_Layer["Data Access & Storage Layer"]
-        ORM["SQLAlchemy Models / Repositories"]:::data
-        DB[(PostgreSQL)]:::data
-        Cache[(Redis Cache / Message Broker)]:::data
+        ORM["SQLAlchemy Models / Repositories"]
+        DB[(PostgreSQL)]
+        Cache[(Redis Cache / Message Broker)]
         
         ORM <--> DB
     end
 
-    subgraph External_Integrations["External Services"]
-        LiveKitCloud["LiveKit SDK (WebRTC)"]:::external
-    end
-
     %% Layer Interactions
-    Presentation_Layer == " HTTPS | WSS " === API_Layer
-    Presentation_Layer -.-> | Client SDK | LiveKitCloud
+    Presentation_Layer == "HTTPS / WSS" === API_Layer
     API_Layer <--> Business_Layer
     Business_Layer <--> Data_Layer
     
     Services ---> ORM
     TaskQueue ---> Cache
-    Services -.-> | Server API calls | LiveKitCloud
 ```
 
 ---
@@ -71,28 +59,22 @@ flowchart TD
 Displays the primary actors (Candidates and HR/Managers) interacting with the HireOps platform, as well as backend system actors (like the AI System) that trigger automated background tasks.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryTextColor': '#000000', 'lineColor': '#000000' }}}%%
 flowchart LR
-    classDef actor fill:#f3f4f6,stroke:#4b5563,color:#000000,stroke-width:2px;
-    classDef usecase fill:#e0f2fe,stroke:#0284c7,color:#000000,stroke-width:2px;
-    classDef system_uc fill:#dcfce7,stroke:#16a34a,color:#000000,stroke-width:2px;
-
     %% Actors
-    Candidate["👤 Candidate"]:::actor
-    HR["👔 HR / Manager"]:::actor
-    System["🤖 Backend System"]:::actor
+    Candidate["👤 Candidate"]
+    HR["👔 HR / Manager"]
+    System["🤖 Backend System"]
 
     %% Use Cases
     subgraph HireOps Platform
-        UC1(["Register / Login"]):::usecase
-        UC2(["View Job Board"]):::usecase
-        UC3(["Apply for Job"]):::usecase
-        UC4(["Upload / Parse Resume"]):::usecase
-        UC5(["Manage Job Postings"]):::usecase
-        UC6(["Review Candidates"]):::usecase
-        
-        UC7(["AI NLP Resume Parsing"]):::system_uc
-        UC8(["Run Bulk Invites"]):::system_uc
+        UC1(["Register / Login"])
+        UC2(["View Job Board"])
+        UC3(["Apply for Job"])
+        UC4(["Upload / Parse Resume"])
+        UC5(["Manage Job Postings"])
+        UC6(["Review Candidates"])
+        UC7(["AI NLP Resume Parsing"])
+        UC8(["Run Bulk Invites"])
     end
 
     %% Relationships
@@ -119,7 +101,6 @@ flowchart LR
 This view highlights how the application is physically split into different services, frameworks, and modules inside the monorepo, including Docker containers and internal dependencies.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryTextColor': '#000000', 'lineColor': '#000000' }}}%%
 classDiagram
     class FrontendApp {
         <<Next.js 14 App Router>>
@@ -149,10 +130,6 @@ classDiagram
         +parse_resume_task()
         +send_invites_task()
     }
-    class LiveKitCloud {
-        <<External WebRTC Service>>
-        +video_rooms
-    }
     class Database {
         <<PostgreSQL>>
     }
@@ -160,24 +137,12 @@ classDiagram
         <<Redis>>
     }
 
-    style FrontendApp fill:#e0f2fe,stroke:#0284c7,color:#000000
-    style APIClient fill:#e0f2fe,stroke:#0284c7,color:#000000
-    style FastAPIServer fill:#dcfce7,stroke:#16a34a,color:#000000
-    style APIRouters fill:#dcfce7,stroke:#16a34a,color:#000000
-    style Services fill:#dcfce7,stroke:#16a34a,color:#000000
-    style CeleryWorker fill:#dcfce7,stroke:#16a34a,color:#000000
-    style LiveKitCloud fill:#f3f4f6,stroke:#4b5563,color:#000000
-    style Database fill:#ffedd5,stroke:#ea580c,color:#000000
-    style RedisBroker fill:#ffedd5,stroke:#ea580c,color:#000000
-
     FrontendApp --> APIClient : Uses
-    FrontendApp -.-> LiveKitCloud : Direct Media Stream
     APIClient --> FastAPIServer : HTTP JSON Request
     FastAPIServer *-- APIRouters : Mounts
     APIRouters --> Services : Calls
     Services --> CeleryWorker : Dispatches via Broker
     Services --> Database : Reads / Writes
-    Services -.-> LiveKitCloud : Room Token Generation
     CeleryWorker --> RedisBroker : Listens for Tasks
     FastAPIServer --> RedisBroker : Publishes Events
 ```
@@ -191,20 +156,13 @@ classDiagram
 This diagram traces a typical complex asynchronous workflow: a candidate uploading a resume, which is parsed by an AI backend worker while the frontend listens for real-time progress updates.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryTextColor': '#000000', 'textColor': '#000000', 'lineColor': '#000000', 'noteTextColor': '#000000' }}}%%
 sequenceDiagram
-    box rgba(224, 242, 254, 0.4) Presentation Layer
-        actor Candidate
-        participant UI as Next.js Frontend
-    end
-    box rgba(220, 252, 231, 0.4) API & Logic Layer
-        participant API as FastAPI Backend
-        participant Celery as Celery Worker
-    end
-    box rgba(255, 237, 213, 0.4) Data Access
-        participant DB as PostgreSQL
-        participant Redis as Redis Broker
-    end
+    actor Candidate
+    participant UI as Next.js Frontend
+    participant API as FastAPI Backend
+    participant DB as PostgreSQL
+    participant Redis as Redis Broker
+    participant Celery as Celery Worker
 
     Candidate->>UI: Uploads Resume (PDF)
     UI->>API: POST /api/v1/candidates/resume
@@ -234,51 +192,38 @@ sequenceDiagram
 This illustrates how the platform runs natively inside a Docker Compose environment (or analogous Cloud/Kubernetes cluster) showing ports, internal networking, and external facing interfaces.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'background': '#ffffff', 'primaryTextColor': '#000000', 'lineColor': '#000000' }}}%%
 flowchart TD
-    classDef presentation fill:#e0f2fe,stroke:#0284c7,color:#000000,stroke-width:2px;
-    classDef logic fill:#dcfce7,stroke:#16a34a,color:#000000,stroke-width:2px;
-    classDef data fill:#ffedd5,stroke:#ea580c,color:#000000,stroke-width:2px;
-    classDef external fill:#f3f4f6,stroke:#4b5563,color:#000000,stroke-width:2px;
-
     subgraph Client_Environment["Client Environment"]
-        Browser["Web Browser (Desktop/Mobile)"]:::presentation
-    end
-
-    subgraph External_Services["External Services"]
-        LiveKit["LiveKit Cloud Server"]:::external
+        Browser["Web Browser (Desktop/Mobile)"]
     end
 
     subgraph Host_Environment["Cloud / Docker Host OS"]
         direction TB
-        Proxy["Reverse Proxy (Nginx / Load Balancer)"]:::external
+        Proxy["Reverse Proxy (Nginx / Load Balancer)"]
 
         subgraph Docker_Network["Docker Internal Network (hireops_default)"]
             direction LR
-            FE["Frontend Node Server<br>(Port 3000)"]:::presentation
+            FE["Frontend Node Server<br>(Port 3000)"]
             
-            API["FastAPI Uvicorn Container<br>(Port 8000)"]:::logic
+            API["FastAPI Uvicorn Container<br>(Port 8000)"]
             
-            Worker["Celery Worker Container<br>(No bound port)"]:::logic
+            Worker["Celery Worker Container<br>(No bound port)"]
             
             subgraph Data_Stores["Data Tier"]
-                DB[("PostgreSQL 15<br>(Volume: postgres_data)")]:::data
-                Cache[("Redis 7 Alpine<br>(Volume: redis_data)")]:::data
+                DB[("PostgreSQL 15<br>(Volume: postgres_data)")]
+                Cache[("Redis 7 Alpine<br>(Volume: redis_data)")]
             end
         end
     end
 
     Browser -->|HTTPS :443| Proxy
-    Browser -.->|WebRTC Metrics| LiveKit
-    
     Proxy -->|Route /_next, /| FE
     Proxy -->|Route /api/v1| API
     
-    FE == " HTTPS | WSS " === API
+    FE -.->|Server-Side Fetch SSR| API
     API -->|TCP :5432| DB
     Worker -->|TCP :5432| DB
     
     API -->|TCP :6379| Cache
     Worker -->|TCP :6379| Cache
-    API -.->|REST Admin API| LiveKit
 ```
