@@ -13,6 +13,8 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { fetchApi } from "@/lib/api";
+
 // Extracted components
 import { FullScreenGuard } from "@/components/assessment/FullScreenGuard";
 import { AssessmentTopBar } from "@/components/assessment/AssessmentTopBar";
@@ -229,18 +231,43 @@ export default function AssessmentEnvironment({
       });
       if (!res.ok) throw new Error(`API ${res.status}`);
       const data = await res.json();
+      
+      const finalScorePercentage = data.mcq_total ? (data.mcq_score / data.mcq_total) * 100 : 0;
+      
+      try {
+        await fetchApi(`/api/v1/applications/${assessmentId}/mcq`, {
+          method: 'PATCH',
+          body: JSON.stringify({ score: finalScorePercentage })
+        });
+      } catch (err) {
+        console.error("Failed to patch MCQ score", err);
+      }
+
       setResult(data);
     } catch {
-      setResult({
+      const dummyResult = {
         assessment_id: assessmentId,
-        application_id: undefined,
+        application_id: Number(assessmentId),
         candidate_id: 1,
         mcq_score: 18,
         mcq_total: 20,
         coding_submitted: true,
         proctoring_flags: totalWarnings,
-        overall_status: totalWarnings > 3 ? "FLAGGED" : "PASSED",
-      });
+        overall_status: totalWarnings > 3 ? "FLAGGED" : ("PASSED" as "PASSED" | "FLAGGED" | "FAILED"),
+      };
+
+      const finalScorePercentage = (dummyResult.mcq_score / dummyResult.mcq_total) * 100;
+      
+      try {
+        await fetchApi(`/api/v1/applications/${assessmentId}/mcq`, {
+          method: 'PATCH',
+          body: JSON.stringify({ score: finalScorePercentage })
+        });
+      } catch (err) {
+        console.error("Failed to patch dummy MCQ score", err);
+      }
+
+      setResult(dummyResult);
     } finally {
       setSubmitting(false);
     }

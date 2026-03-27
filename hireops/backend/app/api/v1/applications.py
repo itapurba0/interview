@@ -27,6 +27,14 @@ class ApplicationCreate(BaseModel):
     """Schema for submitting a job application."""
     job_id: int
 
+class MCQScoreUpdate(BaseModel):
+    """Schema for updating MCQ test score."""
+    score: float
+
+class CodingScoreUpdate(BaseModel):
+    """Schema for updating Coding test score."""
+    score: float
+
 
 class CompanyOut(BaseModel):
     """Schema for company information in responses."""
@@ -261,3 +269,87 @@ async def get_user_applications(
     applications = result.scalars().all()
     
     return [ApplicationOut.model_validate(app) for app in applications]
+
+
+@router.patch("/applications/{application_id}/mcq", response_model=ApplicationOut)
+async def update_mcq_score(
+    application_id: int,
+    payload: MCQScoreUpdate,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save the candidate's MCQ assessment score.
+    """
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can update assessment scores."
+        )
+
+    result = await db.execute(
+        select(Application).where(Application.id == application_id)
+    )
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found."
+        )
+
+    if application.candidate_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to modify this application."
+        )
+
+    application.mcq_score = payload.score
+    application.status = ApplicationStatus.TEST_PENDING
+
+    await db.commit()
+    await db.refresh(application)
+
+    return ApplicationOut.model_validate(application)
+
+
+@router.patch("/applications/{application_id}/coding", response_model=ApplicationOut)
+async def update_coding_score(
+    application_id: int,
+    payload: CodingScoreUpdate,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save the candidate's Coding assessment score and advance the pipeline.
+    """
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can update assessment scores."
+        )
+
+    result = await db.execute(
+        select(Application).where(Application.id == application_id)
+    )
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found."
+        )
+
+    if application.candidate_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to modify this application."
+        )
+
+    application.coding_score = payload.score
+    application.status = ApplicationStatus.VOICE_PENDING
+
+    await db.commit()
+    await db.refresh(application)
+
+    return ApplicationOut.model_validate(application)

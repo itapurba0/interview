@@ -119,16 +119,17 @@ function AssessmentCard({ application, jobData, onStartTest }: {
 
     const statusConfig = statusColors[application.status] || statusColors.APPLIED;
 
+    const isMcqDone = application.mcq_score !== null && application.mcq_score !== undefined;
+    const isCodingDone = application.coding_score !== null && application.coding_score !== undefined;
+
     const getStatusLabel = (status: string) => {
-        const labels: Record<string, string> = {
-            APPLIED: "Applied - AI Screening",
-            TEST_PENDING: "Assessment Pending",
-            VOICE_PENDING: "AI Interview Pending",
-            REJECTED: "Not a Match",
-            SHORTLISTED: "Under Review",
-            SCHEDULED: "Interview Scheduled",
-        };
-        return labels[status] || status;
+        if (isMcqDone && isCodingDone) {
+            return "ASSESSMENTS COMPLETE";
+        }
+        if (isMcqDone && !isCodingDone) {
+            return "MCQ PASSED - CODING PENDING";
+        }
+        return "APPLIED - AI SCREENING";
     };
 
     const formatDate = (dateString: string) => {
@@ -184,8 +185,7 @@ function AssessmentCard({ application, jobData, onStartTest }: {
 
                 {/* Right Section - Action Button */}
                 <div className="flex items-center gap-2">
-                    {/* Start MCQ Screening - for newly applied or assessment_pending status without scores */}
-                    {(application.status === "APPLIED" || application.status === "ASSESSMENT_PENDING") && !application.mcq_score && (
+                    {!isMcqDone && (
                         <motion.button
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
@@ -198,13 +198,12 @@ function AssessmentCard({ application, jobData, onStartTest }: {
                         </motion.button>
                     )}
 
-                    {/* Start Coding Test - after MCQ is done but coding is pending */}
-                    {application.mcq_score && !application.coding_score && (
+                    {isMcqDone && !isCodingDone && (
                         <motion.button
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
                             onClick={() => onStartTest("coding", application.id)}
-                            className="flex items-center gap-2 px-6 py-3 bg-violet-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(139,92,246,0.3)] hover:bg-violet-400 transition-all whitespace-nowrap"
+                            className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:bg-blue-400 transition-all whitespace-nowrap"
                         >
                             <FlaskConical className="w-4 h-4" />
                             Start Coding Test
@@ -212,52 +211,9 @@ function AssessmentCard({ application, jobData, onStartTest }: {
                         </motion.button>
                     )}
 
-                    {/* Under Review - both scores complete */}
-                    {application.mcq_score && application.coding_score && (
+                    {isMcqDone && isCodingDone && (
                         <div className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 bg-neutral-800/20 border border-neutral-700/30 whitespace-nowrap">
-                            Under Review
-                        </div>
-                    )}
-
-                    {/* TEST_PENDING - legacy status mapping */}
-                    {application.status === "TEST_PENDING" && !application.mcq_score && (
-                        <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => onStartTest("mcq", application.id)}
-                            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400 transition-all whitespace-nowrap"
-                        >
-                            <FlaskConical className="w-4 h-4" />
-                            Start Assessment
-                            <ChevronRight className="w-4 h-4 opacity-60" />
-                        </motion.button>
-                    )}
-
-                    {/* VOICE_PENDING - AI interview */}
-                    {application.status === "VOICE_PENDING" && (
-                        <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => onStartTest("mcq", application.id)}
-                            className="flex items-center gap-2 px-6 py-3 bg-violet-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(139,92,246,0.3)] hover:bg-violet-400 transition-all whitespace-nowrap"
-                        >
-                            <Briefcase className="w-4 h-4" />
-                            Start Interview
-                            <ChevronRight className="w-4 h-4 opacity-60" />
-                        </motion.button>
-                    )}
-
-                    {/* SHORTLISTED or SCHEDULED - already in process */}
-                    {(application.status === "SHORTLISTED" || application.status === "SCHEDULED") && (
-                        <div className="px-6 py-3 rounded-xl font-bold text-sm text-neutral-400 bg-neutral-800/20 border border-neutral-700/30 whitespace-nowrap">
-                            Under Review
-                        </div>
-                    )}
-
-                    {/* REJECTED - not a match */}
-                    {application.status === "REJECTED" && (
-                        <div className="px-6 py-3 rounded-xl font-bold text-sm text-red-400 bg-red-500/10 border border-red-500/20 whitespace-nowrap">
-                            Not a Match
+                            Tests Completed - Under Review
                         </div>
                     )}
                 </div>
@@ -330,13 +286,10 @@ function AssessmentHubContent() {
 
     // Handle test start
     const handleStartTest = (type: "mcq" | "coding", applicationId: number) => {
-        // Route to test taking page
-        // For now, route to the assessment ID (which typically matches application ID or we use a mapping)
         if (type === "mcq") {
-            router.push(`/candidate/assessment/${applicationId}/take`);
+            router.push(`/candidate/assessments/mcq/${applicationId}`);
         } else {
-            // In future, handle coding test separately
-            router.push(`/candidate/assessment/${applicationId}/take`);
+            router.push(`/candidate/assessments/coding/${applicationId}`);
         }
     };
 

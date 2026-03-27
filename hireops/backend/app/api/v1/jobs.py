@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
+from sqlalchemy.orm import joinedload
 
 from app.db import get_db
 from app.models import Job, Application, ApplicationStatus
@@ -70,7 +71,9 @@ class HRJobOut(BaseModel):
 @router.get("/jobs", response_model=list[JobOut])
 async def list_jobs(db: AsyncSession = Depends(get_db)):
     """Public listing of all active jobs across the platform."""
-    result = await db.execute(select(Job).where(Job.is_active == True))
+    result = await db.execute(
+        select(Job).where(Job.is_active == True).options(joinedload(Job.company))
+    )
     return result.scalars().all()
 
 
@@ -90,8 +93,11 @@ async def create_job(
     )
     db.add(new_job)
     await db.commit()
-    await db.refresh(new_job)
-    return new_job
+    # Re-fetch with company eager-loaded so serialization works
+    result = await db.execute(
+        select(Job).where(Job.id == new_job.id).options(joinedload(Job.company))
+    )
+    return result.scalar_one()
 
 
 @router.get("/jobs/hr", response_model=list[HRJobOut])
@@ -138,7 +144,9 @@ async def list_jobs_hr(
 @router.get("/jobs/{job_id}", response_model=JobOut)
 async def get_job_by_id(job_id: int, db: AsyncSession = Depends(get_db)):
     """Fetch specific job details for candidates or HR."""
-    result = await db.execute(select(Job).where(Job.id == job_id))
+    result = await db.execute(
+        select(Job).where(Job.id == job_id).options(joinedload(Job.company))
+    )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job Listing not found")
