@@ -8,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from passlib.context import CryptContext
 
+from app.api.v1.candidates import _profiles as candidate_profiles
 from app.db import get_db
-from app.models import User, UserRole
+from app.models import User, UserRole, Company
 from pydantic import BaseModel, EmailStr
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -18,6 +19,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
+    role: str = "CANDIDATE"
+    company_name: Optional[str] = None
 
 # Configuration for SaaS JWT Issuance
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "hireops_dev_secret_2026_xyz")
@@ -46,8 +49,16 @@ async def register_candidate(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Registers a new global candidate into the platform.
+    Creates a new global candidate or tenant-scoped HR/Manager account.
     """
+    user_role = payload.role.strip().upper()
+    tenant_roles = {UserRole.HR.value, UserRole.MANAGER.value}
+    if user_role not in {UserRole.CANDIDATE.value, *tenant_roles}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be CANDIDATE, HR, or MANAGER."
+        )
+
     # 1. Check existing
     result = await db.execute(select(User).where(User.email == payload.email))
     if result.scalar_one_or_none():
@@ -55,18 +66,33 @@ async def register_candidate(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered."
         )
-    
+
+    company_id = None
+    if user_role in tenant_roles:
+        if not payload.company_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Company name required for HR/Manager registration."
+            )
+        new_company = Company(name=payload.company_name)
+        db.add(new_company)
+        await db.flush()
+        company_id = new_company.id
+
     # 2. Hash and Create User
     new_user = User(
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
-        role=UserRole.CANDIDATE,
-        company_id=None
+        role=UserRole(user_role),
+        company_id=company_id
     )
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    if user_role == UserRole.CANDIDATE.value:
+        candidate_profiles[new_user.id] = {}
     
     # 3. Issue Token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

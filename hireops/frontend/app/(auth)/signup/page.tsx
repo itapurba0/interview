@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Loader2, Mail, Lock, User, Building, ChevronDown, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Lock, User, Building, ArrowRight } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -15,7 +15,7 @@ interface RegisterResponse {
 
 export default function SignupPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"candidate" | "employer">("candidate");
+  const [role, setRole] = useState<"candidate" | "hr" | "manager">("candidate");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,17 +26,28 @@ export default function SignupPage() {
 
   // Employer specific state
   const [companyName, setCompanyName] = useState("");
-  const [role, setRole] = useState<"hr" | "hiring_manager">("hr");
+  const roleTabs = [
+    { id: "candidate", label: "Candidate" },
+    { id: "hr", label: "HR" },
+    { id: "manager", label: "Manager" },
+  ] as const;
+  const isEmployer = role !== "candidate";
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
-    if (activeTab === "employer") {
-      setError("Employer registration is not yet supported in this demo.");
-      setIsLoading(false);
-      return;
+    const payloadRole = (role.toUpperCase() as "CANDIDATE" | "HR" | "MANAGER");
+    const payload: Record<string, unknown> = {
+      email,
+      password,
+      full_name: name,
+      role: payloadRole,
+    };
+
+    if (isEmployer) {
+      payload.company_name = companyName;
     }
 
     let registrationData: RegisterResponse | null = null;
@@ -44,11 +55,7 @@ export default function SignupPage() {
     try {
       registrationData = await fetchApi<RegisterResponse>("/api/v1/auth/register", {
         method: "POST",
-        body: JSON.stringify({
-          email,
-          password,
-          full_name: name,
-        }),
+        body: JSON.stringify(payload),
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unable to register at this time.";
@@ -85,7 +92,13 @@ export default function SignupPage() {
       email: decodedPayload.email,
     });
 
-    router.push("/candidate");
+    if (payloadRole === "HR") {
+      router.push("/hr");
+    } else if (payloadRole === "MANAGER") {
+      router.push("/manager");
+    } else {
+      router.push("/candidate");
+    }
   };
 
   return (
@@ -109,28 +122,23 @@ export default function SignupPage() {
 
       {/* Modern Toggle Switch using Framer Motion */}
       <div className="relative flex p-1 mb-8 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <button
-          onClick={() => setActiveTab("candidate")}
-          className={`relative z-10 w-1/2 py-2 text-sm font-medium transition-colors ${activeTab === "candidate" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-200"
-            }`}
-        >
-          Candidate
-        </button>
-        <button
-          onClick={() => setActiveTab("employer")}
-          className={`relative z-10 w-1/2 py-2 text-sm font-medium transition-colors ${activeTab === "employer" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-200"
-            }`}
-        >
-          Employer
-        </button>
+        {roleTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setRole(tab.id)}
+            className={`relative z-10 w-1/3 py-2 text-sm font-medium transition-colors ${role === tab.id ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-200"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
 
         {/* Animated Background Indicator */}
         <motion.div
           className="absolute inset-1 bg-white rounded-md shadow-sm"
           initial={false}
           animate={{
-            x: activeTab === "candidate" ? 0 : "100%",
-            width: "calc(50% - 4px)",
+            x: role === "candidate" ? 0 : role === "hr" ? "33.333%" : "66.666%",
+            width: "calc(33.333% - 4px)",
           }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         />
@@ -139,7 +147,7 @@ export default function SignupPage() {
       <form onSubmit={handleSignup} className="space-y-4">
         {/* Animated Form Fields */}
         <AnimatePresence mode="popLayout">
-          {activeTab === "employer" && (
+          {isEmployer && (
             <motion.div
               key="employer-fields"
               initial={{ opacity: 0, height: 0, scale: 0.95 }}
@@ -157,30 +165,12 @@ export default function SignupPage() {
                   <Building className="absolute left-3 top-3 h-5 w-5 text-zinc-600" />
                   <input
                     type="text"
-                    required
+                    required={isEmployer}
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
                     className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-600 focus:border-transparent transition-all"
                     placeholder="Acme Corp"
                   />
-                </div>
-              </div>
-
-              {/* Role Dropdown */}
-              <div className="space-y-2 relative flex flex-col">
-                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Your Role
-                </label>
-                <div className="relative">
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as "hr" | "hiring_manager")}
-                    className="w-full appearance-none bg-zinc-900/50 border border-zinc-800 rounded-lg py-2.5 pl-4 pr-10 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-600 focus:border-transparent transition-all"
-                  >
-                    <option value="hr">HR Professional</option>
-                    <option value="hiring_manager">Hiring Manager</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-3.5 h-4 w-4 text-zinc-500 pointer-events-none" />
                 </div>
               </div>
             </motion.div>
