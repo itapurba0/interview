@@ -46,6 +46,7 @@ interface Assessment {
 
 interface AssessmentResult {
   assessment_id: string;
+  application_id?: number | null;
   candidate_id: number;
   mcq_score: number;
   mcq_total: number;
@@ -176,7 +177,12 @@ export default function AssessmentEnvironment({
     } catch (err) {
       console.error("Failed to exit full screen", err);
     }
-    router.push("/candidate");
+    // Route to the specific application's assessment hub if applicationId is available
+    if (result?.application_id) {
+      router.push(`/candidate/application/${result.application_id}`);
+    } else {
+      router.push("/candidate");
+    }
   };
 
   // ─── Timer countdown ──────────────────────────────────────────────
@@ -227,6 +233,7 @@ export default function AssessmentEnvironment({
     } catch {
       setResult({
         assessment_id: assessmentId,
+        application_id: undefined,
         candidate_id: 1,
         mcq_score: 18,
         mcq_total: 20,
@@ -303,6 +310,7 @@ export default function AssessmentEnvironment({
     return (
       <AssessmentResultScreen
         result={result}
+        applicationId={result.application_id}
         handleExitAndReturn={handleExitAndReturn}
       />
     );
@@ -381,11 +389,10 @@ export default function AssessmentEnvironment({
                       onClick={() =>
                         setAnswers((p) => ({ ...p, [q.id]: oi }))
                       }
-                      className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all border ${
-                        selected
+                      className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all border ${selected
                           ? "bg-indigo-500/15 border-indigo-500/40 text-indigo-200"
                           : "bg-neutral-800/30 border-neutral-800/50 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
-                      }`}
+                        }`}
                     >
                       <span className="font-bold mr-3 opacity-50">
                         {String.fromCharCode(65 + oi)}.

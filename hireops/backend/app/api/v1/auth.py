@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from passlib.context import CryptContext
 
-from app.api.v1.candidates import _profiles as candidate_profiles
 from app.db import get_db
 from app.models import User, UserRole, Company, Candidate
 from pydantic import BaseModel, EmailStr
@@ -92,7 +91,6 @@ async def register_candidate(
     await db.refresh(new_user)
 
     if user_role == UserRole.CANDIDATE.value:
-        candidate_profiles[new_user.id] = {}
         # Create Candidate profile record in database
         new_candidate = Candidate(user_id=new_user.id)
         db.add(new_candidate)

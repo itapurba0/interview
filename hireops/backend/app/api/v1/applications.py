@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from datetime import datetime
 
 from app.db import get_db
@@ -27,6 +28,17 @@ class ApplicationCreate(BaseModel):
     job_id: int
 
 
+class JobBasic(BaseModel):
+    """Schema for basic job information in application responses."""
+    id: int
+    title: str
+    company: str
+    description: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
 class ApplicationOut(BaseModel):
     """Schema for returning application data."""
     id: int
@@ -36,6 +48,21 @@ class ApplicationOut(BaseModel):
     ai_match_score: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ApplicationWithJobOut(BaseModel):
+    """Schema for returning application data with related job details."""
+    id: int
+    candidate_id: int
+    job_id: int
+    status: str
+    ai_match_score: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    job: JobBasic
     
     class Config:
         from_attributes = True
@@ -89,6 +116,20 @@ async def create_application(
             detail="Job not found."
         )
     
+    # Check for duplicate application (strict enforcement)
+    existing_app = await db.execute(
+        select(Application).where(
+            Application.candidate_id == current_user.id,
+            Application.job_id == payload.job_id
+        )
+    )
+    
+    if existing_app.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already applied for this role."
+        )
+    
     # Calculate match score and get AI reasoning
     candidate_dict = {
         "technical_skills": candidate.technical_skills or [],
@@ -122,6 +163,54 @@ async def create_application(
     await db.refresh(application)
     
     return ApplicationOut.model_validate(application)
+
+
+@router.get("/applications/me", response_model=list[ApplicationWithJobOut])
+async def get_my_applications(
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve all applications for the logged-in candidate with related job details.
+    
+    Returns:
+    - List of applications with full job information (title, company, description)
+    - Sorted by created_at descending (newest first)
+    
+    Raises:
+    - 403: If user is not a candidate
+    - 404: If candidate profile not found
+    """
+    # Verify user is a CANDIDATE
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can view their applications."
+        )
+    
+    # Load Candidate profile
+    candidate_result = await db.execute(
+        select(Candidate).where(Candidate.user_id == current_user.id)
+    )
+    candidate = candidate_result.scalar_one_or_none()
+    
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate profile not found. Please complete your profile."
+        )
+    
+    # Query applications with eager-loaded job details
+    result = await db.execute(
+        select(Application)
+        .where(Application.candidate_id == current_user.id)
+        .options(joinedload(Application.job))
+        .order_by(Application.created_at.desc())
+    )
+    
+    applications = result.scalars().all()
+    
+    return [ApplicationWithJobOut.model_validate(app) for app in applications]
 
 
 @router.get("/applications")

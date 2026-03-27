@@ -11,6 +11,14 @@ from fastapi import APIRouter
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
+# Assessment to Application Mapping
+# ---------------------------------------------------------------------------
+ASSESSMENT_TO_APPLICATION_MAP: dict[str, int] = {
+    "1": 101,  # Assessment 1 -> Application 101
+    "2": 102,  # Assessment 2 -> Application 102
+}
+
+# ---------------------------------------------------------------------------
 # Seed MCQ bank per assessment
 # ---------------------------------------------------------------------------
 
@@ -166,6 +174,7 @@ class AssessmentSubmission(BaseModel):
 
 class AssessmentResult(BaseModel):
     assessment_id: str
+    application_id: int | None = None
     candidate_id: int
     mcq_score: int
     mcq_total: int
@@ -205,9 +214,10 @@ async def get_assessment(assessment_id: str):
 async def submit_assessment(payload: AssessmentSubmission):
     """
     Grades the assessment, factors in proctoring warning telemetry,
-    and returns a verdict.
+    and returns a verdict with the associated application ID for routing.
     """
     source = ASSESSMENT_BANK.get(payload.assessment_id, DEFAULT_ASSESSMENT)
+    application_id = ASSESSMENT_TO_APPLICATION_MAP.get(payload.assessment_id)
 
     # Grade MCQs
     mcq_correct = 0
@@ -238,6 +248,7 @@ async def submit_assessment(payload: AssessmentSubmission):
 
     return AssessmentResult(
         assessment_id=payload.assessment_id,
+        application_id=application_id,
         candidate_id=payload.candidate_id or 1,
         mcq_score=mcq_correct,
         mcq_total=mcq_total,

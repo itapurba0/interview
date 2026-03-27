@@ -70,7 +70,8 @@ def _parse_match_response(response_text: str) -> Dict[str, Any]:
     """
     Extract and validate the match score and reasoning from Ollama response.
     
-    Attempts JSON parsing first, then falls back to regex extraction.
+    Handles Markdown code blocks from LLM output, then attempts JSON parsing.
+    Falls back to regex extraction if JSON parsing fails.
     
     Args:
         response_text: Raw response text from Ollama
@@ -82,30 +83,47 @@ def _parse_match_response(response_text: str) -> Dict[str, Any]:
     """
     default_reasoning = "AI reasoning unavailable"
     
+    logger.debug(f"[LLM Response] Raw: {response_text[:200]}...")  # Log first 200 chars
+    
+    # Strip Markdown code blocks if the LLM wrapped JSON in backticks
+    # Handles patterns like: ```json{...}``` or ```{...}```
+    cleaned_text = re.sub(r'```(?:json)?\s*\n?', '', response_text)
+    cleaned_text = re.sub(r'\n?```', '', cleaned_text)
+    cleaned_text = cleaned_text.strip()
+    
+    logger.debug(f"[Cleaned Response] {cleaned_text[:200]}...")  # Log cleaned version
+    
     try:
         # Try to parse as JSON first
-        score_data = json.loads(response_text)
+        score_data = json.loads(cleaned_text)
         score = int(score_data.get("score", 0))
         reasoning = str(score_data.get("reasoning", default_reasoning))
         
-        return {
+        result = {
             "score": min(100, max(0, score)),
             "reasoning": reasoning if reasoning and len(reasoning) > 0 else default_reasoning
         }
-    except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        logger.info(f"[Parse Success] Score: {result['score']}, Reasoning: {result['reasoning'][:100]}...")
+        return result
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
+        logger.warning(f"[JSON Parse Failed] {type(e).__name__}: {str(e)}")
+        
         # Fallback: extract first number found using regex
         try:
-            match = re.search(r'\d+', response_text)
+            match = re.search(r'\d+', cleaned_text)
             score = int(match.group()) if match else 0
             score = min(100, max(0, score))
             
-            return {
+            result = {
                 "score": score,
                 "reasoning": default_reasoning
             }
-        except (ValueError, AttributeError):
-            pass
+            logger.warning(f"[Regex Fallback] Extracted score: {score}")
+            return result
+        except (ValueError, AttributeError) as e:
+            logger.error(f"[Regex Fallback Failed] {type(e).__name__}: {str(e)}")
     
+    logger.error(f"[Parse Complete Failure] Returning score 0")
     return {
         "score": 0,
         "reasoning": default_reasoning
@@ -143,14 +161,29 @@ async def calculate_job_match(candidate_data: Dict[str, Any], job_description: s
         candidate_context = _build_candidate_context(candidate_data, job_description)
         full_prompt = system_prompt + "\n\n" + candidate_context
         
+        logger.info("[Job Match] Calling Ollama API...")
+        
         # Call Ollama API
         response_text = await call_ollama(full_prompt)
         
+        logger.info(f"[Job Match] Ollama returned: {response_text[:150] if response_text else 'None'}...")
+        
+        if not response_text:
+            logger.error("[Job Match] Ollama returned empty/None response")
+            return {
+                "score": 0,
+                "reasoning": "AI reasoning unavailable"
+            }
+        
         # Parse and return match result
-        return _parse_match_response(response_text)
+        result = _parse_match_response(response_text)
+        logger.info(f"[Job Match] Final result: Score={result['score']}, Reasoning={result['reasoning'][:80]}...")
+        return result
             
     except Exception as e:
-        logger.error(f"Error in calculate_job_match: {str(e)}")
+        logger.error(f"[Job Match] Error in calculate_job_match: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"[Job Match] Traceback: {traceback.format_exc()}")
         return {
             "score": 0,
             "reasoning": "AI reasoning unavailable"

@@ -31,7 +31,7 @@ export interface ApplicationResult {
   id: number;
   job_id: number;
   candidate_id: number;
-  status: "TEST_PENDING" | "VOICE_PENDING" | "REJECTED";
+  status: "APPLIED" | "AI_SCREENING" | "TEST_PENDING" | "REJECTED" | "VOICE_PENDING" | "SHORTLISTED" | "SCHEDULED";
   ai_match_score: number;
 }
 
@@ -66,7 +66,9 @@ export function JobCard({
       );
     }
 
+    // If application exists
     if (application) {
+      // Application was rejected - show "Not a Match"
       if (application.status === "REJECTED") {
         return (
           <div className="flex items-center gap-3">
@@ -78,14 +80,44 @@ export function JobCard({
         );
       }
 
+      // AI Screening in progress
+      if (application.status === "AI_SCREENING") {
+        return (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-blue-500/15 text-blue-300 rounded-xl border border-blue-500/30">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Screening in Progress
+          </div>
+        );
+      }
+
+      // Test/Assessment pending - "Resume Assessment"
+      if (application.status === "TEST_PENDING") {
+        return (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate(`/candidate/application/${job.id}`);
+            }}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/25 transition-all"
+          >
+            <FlaskConical className="w-4 h-4" />
+            Resume Assessment
+            <ChevronRight className="w-3 h-3 opacity-60" />
+          </motion.button>
+        );
+      }
+
+      // Voice interview pending
       if (application.status === "VOICE_PENDING") {
         return (
           <motion.button
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={(e) => {
-               e.stopPropagation();
-               onNavigate("/candidate/interview/" + job.id);
+              e.stopPropagation();
+              onNavigate(`/candidate/interview/${job.id}`);
             }}
             className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-violet-500/15 text-violet-300 rounded-xl border border-violet-500/30 hover:bg-violet-500/25 transition-all"
           >
@@ -96,32 +128,53 @@ export function JobCard({
         );
       }
 
-      // TEST_PENDING
+      // Shortlisted - "Under Review"
+      if (application.status === "SHORTLISTED") {
+        return (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 rounded-xl border border-amber-500/30">
+            <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
+            Under Review
+          </div>
+        );
+      }
+
+      // Scheduled - "Interview Scheduled"
+      if (application.status === "SCHEDULED") {
+        return (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-300 rounded-xl border border-indigo-500/30">
+            <span className="w-2 h-2 bg-indigo-400 rounded-full"></span>
+            Interview Scheduled
+          </div>
+        );
+      }
+
+      // Applied (initial state, no status action yet)
+      if (application.status === "APPLIED") {
+        return (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded-xl border border-emerald-500/30">
+            <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
+            Applied
+          </div>
+        );
+      }
+
+      // Fallback for unknown status
       return (
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={(e) => {
-             e.stopPropagation();
-             onNavigate("/candidate/application/" + job.id);
-          }}
-          className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/25 transition-all"
-        >
-          <FlaskConical className="w-4 h-4" />
-          View Assessments
-          <ChevronRight className="w-3 h-3 opacity-60" />
-        </motion.button>
+        <div className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded-xl border border-emerald-500/30">
+          <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
+          Applied
+        </div>
       );
     }
 
-    // No application yet
+    // No application yet - show "Apply" button
     return (
       <motion.button
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
         onClick={(e) => {
-           e.stopPropagation();
-           onApply(job.id);
+          e.stopPropagation();
+          onApply(job.id);
         }}
         className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-widest bg-indigo-500 text-white shadow-[0_0_15px_rgba(99,102,241,0.3)] rounded-xl hover:bg-indigo-400 hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] transition-all ml-auto"
       >
@@ -137,9 +190,9 @@ export function JobCard({
       glassStyle={
         application?.status === "REJECTED"
           ? "red"
-          : application?.status === "TEST_PENDING"
-          ? "emerald"
-          : "default"
+          : application?.status === "TEST_PENDING" || application?.status === "VOICE_PENDING"
+            ? "emerald"
+            : "default"
       }
       whileHover={{ scale: 1.015, y: -4 }}
       className="group p-6 rounded-3xl flex flex-col justify-between transition-colors duration-300 cursor-pointer"

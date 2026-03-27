@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, Variants } from "framer-motion";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, AlertCircle, ChevronRight } from "lucide-react";
 
 // Extracted components
 import { ToastContainer, Toast } from "@/components/candidate/ToastContainer";
 import { JobCard, Job, ApplicationResult } from "@/components/candidate/JobCard";
 import { JobDetailsModal } from "@/components/shared/JobDetailsModal";
+import { fetchApi } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Animation variants
@@ -42,10 +43,12 @@ function CandidateDashboardContent() {
   const [error, setError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
-  // Map job_id → application result
+  // Map job_id → full application object with status  
   const [applications, setApplications] = useState<Record<number, ApplicationResult>>({});
   // Map job_id → "applying" spinner state
   const [applyingFor, setApplyingFor] = useState<Record<number, boolean>>({});
+  // Track application errors per job
+  const [applyErrors, setApplyErrors] = useState<Record<number, string | null>>({});
 
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -84,14 +87,35 @@ function CandidateDashboardContent() {
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchJobs() {
+    async function fetchJobsAndApplications() {
       try {
         setLoading(true);
-        const res = await fetch("/api/v1/jobs");
-        if (!res.ok) throw new Error(`API returned ${res.status}`);
-        const data: Job[] = await res.json();
+
+        // Fetch jobs
+        const jobsRes = await fetch("/api/v1/jobs");
+        if (!jobsRes.ok) throw new Error(`Jobs API returned ${jobsRes.status}`);
+        const jobsData: Job[] = await jobsRes.json();
+
+        // Fetch user's existing applications
+        const appsRes = await fetchApi<Array<{ id: number; job_id: number; candidate_id: number; status: string; ai_match_score?: number; created_at: string; updated_at: string }>>("/api/v1/applications");
+
         if (!cancelled) {
-          setJobs(data);
+          setJobs(jobsData);
+
+          // Populate applications state with full application data from backend
+          const appliedApps: Record<number, ApplicationResult> = {};
+          if (Array.isArray(appsRes)) {
+            appsRes.forEach((app) => {
+              appliedApps[app.job_id] = {
+                id: app.id,
+                job_id: app.job_id,
+                candidate_id: app.candidate_id,
+                status: app.status as "APPLIED" | "AI_SCREENING" | "TEST_PENDING" | "REJECTED" | "VOICE_PENDING" | "SHORTLISTED" | "SCHEDULED",
+                ai_match_score: app.ai_match_score || 0
+              };
+            });
+          }
+          setApplications(appliedApps);
           setError(null);
         }
       } catch (err: unknown) {
@@ -104,7 +128,7 @@ function CandidateDashboardContent() {
       }
     }
 
-    fetchJobs();
+    fetchJobsAndApplications();
     return () => {
       cancelled = true;
     };
@@ -116,24 +140,19 @@ function CandidateDashboardContent() {
   const handleApply = async (jobId: number) => {
     if (applications[jobId] || applyingFor[jobId]) return;
 
+    // Clear any previous error for this job
+    setApplyErrors((prev) => ({ ...prev, [jobId]: null }));
     setApplyingFor((prev) => ({ ...prev, [jobId]: true }));
 
     try {
-      const res = await fetch("/api/v1/applications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobId }),
-      });
+      const result: ApplicationResult = await fetchApi<ApplicationResult>(
+        "/api/v1/applications",
+        {
+          method: "POST",
+          body: JSON.stringify({ job_id: jobId }),
+        }
+      );
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        // Extract error detail from API response and throw
-        const errorDetail = data.detail || `API error: ${res.status}`;
-        throw new Error(errorDetail);
-      }
-
-      const result: ApplicationResult = data;
       setApplications((prev) => ({ ...prev, [jobId]: result }));
       addToast(
         `AI Match: ${result.ai_match_score}% — Cleared for Proctored Testing!`,
@@ -141,8 +160,8 @@ function CandidateDashboardContent() {
       );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to submit application";
-      // Re-throw so modal can catch and display error details
-      throw new Error(errorMessage);
+      // Set error state instead of throwing - let modal display it gracefully
+      setApplyErrors((prev) => ({ ...prev, [jobId]: errorMessage }));
     } finally {
       setApplyingFor((prev) => ({ ...prev, [jobId]: false }));
     }
@@ -150,6 +169,11 @@ function CandidateDashboardContent() {
 
   // Navigation helper for JobCard
   const handleNavigate = (path: string) => router.push(path);
+
+  // Count pending assessments
+  const pendingCount = Object.values(applications).filter(app =>
+    ["TEST_PENDING", "VOICE_PENDING"].includes(app.status)
+  ).length;
 
   // ------------------------------------------------------------------
   // Loading / Error states
@@ -184,6 +208,36 @@ function CandidateDashboardContent() {
     <div className="flex flex-col flex-1 p-8 md:p-12 max-w-7xl mx-auto w-full">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Pending Assessments Banner */}
+      {pendingCount > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 p-4 bg-linear-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/30 rounded-xl flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-300">
+                {pendingCount} {pendingCount === 1 ? "Assessment" : "Assessments"} Waiting
+              </p>
+              <p className="text-xs text-emerald-300/70">
+                Complete your tests to move forward in the interview process.
+              </p>
+            </div>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => router.push("/candidate/assessment")}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 rounded-lg text-xs font-bold uppercase tracking-wider transition-all shrink-0"
+          >
+            View Hub
+            <ChevronRight className="w-3 h-3" />
+          </motion.button>
+        </motion.div>
+      )}
+
       <motion.div initial="hidden" animate="show" variants={containerVariants} className="space-y-10">
         {/* Header */}
         <motion.div variants={cardVariants} className="space-y-2">
@@ -217,11 +271,17 @@ function CandidateDashboardContent() {
 
       <JobDetailsModal
         isOpen={!!selectedJob}
-        onClose={() => setSelectedJob(null)}
+        onClose={() => {
+          if (selectedJob) {
+            setApplyErrors((prev) => ({ ...prev, [selectedJob.id]: null }));
+          }
+          setSelectedJob(null);
+        }}
         job={selectedJob}
         viewerRole="CANDIDATE"
         isApplying={selectedJob ? !!applyingFor[selectedJob.id] : false}
         hasApplied={selectedJob ? !!applications[selectedJob.id] : false}
+        applyError={selectedJob ? applyErrors[selectedJob.id] || null : null}
         onApply={handleApply}
       />
     </div>

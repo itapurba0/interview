@@ -24,6 +24,7 @@ export interface JobDetailsModalProps {
   viewerRole: "CANDIDATE" | "HR";
   isApplying?: boolean;
   hasApplied?: boolean;
+  applyError?: string | null;
   onApply?: (jobId: number) => void;
 }
 
@@ -34,22 +35,31 @@ export function JobDetailsModal({
   viewerRole,
   isApplying = false,
   hasApplied = false,
+  applyError: externalApplyError = null,
   onApply,
 }: JobDetailsModalProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rejectionFeedback, setRejectionFeedback] = useState<string | null>(null);
   const [applied, setApplied] = useState(hasApplied);
+
+  // Use external error if provided, otherwise use local error state
+  const displayError = externalApplyError || error;
 
   const handleApplyClick = async () => {
     if (!onApply) return;
 
     setIsSubmitting(true);
     setError(null);
+    setRejectionFeedback(null);
 
     try {
       await onApply(job.id);
-      setApplied(true);
+      // Only mark as applied if onApply succeeds without error
+      if (!externalApplyError) {
+        setApplied(true);
+      }
     } catch (err: unknown) {
       let errorMessage = "An error occurred while applying. Please try again.";
 
@@ -57,7 +67,20 @@ export function JobDetailsModal({
         errorMessage = err.message;
       }
 
-      setError(errorMessage);
+      // If error is "already applied", mark as applied instead of showing error
+      if (errorMessage.includes("already applied")) {
+        setApplied(true);
+      }
+      // If 403 rejection error, display AI feedback in rejection UI
+      else if (errorMessage.includes("minimum match") || errorMessage.includes("Below")) {
+        // Extract AI reasoning from error message if available
+        // Error format: "Below minimum match threshold. AI Feedback: ..."
+        const feedbackMatch = errorMessage.match(/AI Feedback:\s*(.+?)(?:\.|$)/);
+        const feedback = feedbackMatch ? feedbackMatch[1].trim() : "Your qualifications do not meet the minimum requirements for this role.";
+        setRejectionFeedback(feedback);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -142,8 +165,28 @@ export function JobDetailsModal({
       {/* Conditional Sticky Footer for Candidates */}
       {viewerRole === "CANDIDATE" && (
         <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-neutral-900 via-neutral-900/90 to-transparent border-t border-neutral-800/50 rounded-b-3xl">
+          {/* Rejection Feedback UI */}
+          {rejectionFeedback && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 p-6 bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/30 rounded-xl"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 mt-1">
+                  <AlertCircle className="w-6 h-6 text-amber-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-amber-300 font-semibold text-sm mb-2">Application Not Submitted</p>
+                  <p className="text-amber-200/90 text-sm leading-relaxed">{rejectionFeedback}</p>
+                  <p className="text-amber-200/60 text-xs mt-3 italic">Consider developing these skills or exploring similar roles that better match your background.</p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* Error Alert */}
-          {error && (
+          {displayError && !rejectionFeedback && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -151,10 +194,10 @@ export function JobDetailsModal({
             >
               <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-red-300 text-sm font-medium">{error}</p>
+                <p className="text-red-300 text-sm font-medium">{displayError}</p>
 
                 {/* Resume Upload CTA */}
-                {error.includes("Please upload a resume first") && (
+                {displayError.includes("Please upload a resume first") && (
                   <Link href="/candidate/profile">
                     <motion.button
                       whileHover={{ scale: 1.02 }}
@@ -180,7 +223,7 @@ export function JobDetailsModal({
               Cancel
             </button>
 
-            {!applied ? (
+            {!rejectionFeedback && !applied && !hasApplied ? (
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -200,12 +243,12 @@ export function JobDetailsModal({
                   </>
                 )}
               </motion.button>
-            ) : (
+            ) : !rejectionFeedback && (applied || hasApplied) ? (
               <div className="flex items-center gap-2 px-8 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-bold text-sm cursor-not-allowed">
                 <CheckCircle2 className="w-5 h-5" />
-                Application Submitted
+                {applied ? "Application Submitted" : "✓ Already Applied"}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

@@ -3,19 +3,48 @@
 import { useState, useEffect } from "react";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
-import { LogOut } from "lucide-react";
+import { LogOut, AlertCircle } from "lucide-react";
+import { fetchApi } from "@/lib/api";
 
 export function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isAuthenticated, logout } = useAuthStore();
   const [mounted, setMounted] = useState(false);
+  const [pendingAssessments, setPendingAssessments] = useState(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch pending assessments for candidates
+  useEffect(() => {
+    if (!mounted || !isAuthenticated || user?.role !== "candidate") return;
+
+    let cancelled = false;
+
+    async function checkPendingAssessments() {
+      try {
+        const appsRes = await fetchApi<any>("/api/v1/applications");
+        if (!cancelled && Array.isArray(appsRes)) {
+          const pending = appsRes.filter((app: any) =>
+            ["TEST_PENDING", "VOICE_PENDING"].includes(app.status)
+          ).length;
+          setPendingAssessments(pending);
+        }
+      } catch (err) {
+        console.error("Failed to fetch pending assessments:", err);
+      }
+    }
+
+    checkPendingAssessments();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, isAuthenticated, user?.role]);
 
   const handleLogout = () => {
     logout();
@@ -58,8 +87,21 @@ export function Navbar() {
 
               {role === "candidate" && (
                 <>
-                  <NavLink href="/candidate">Job Board</NavLink>
-                  <NavLink href="/candidate/profile">Profile</NavLink>
+                  <NavLink href="/candidate" isActive={pathname === "/candidate"}>Job Board</NavLink>
+                  <div className="relative">
+                    <NavLink href="/candidate/assessment" isActive={pathname === "/candidate/assessment"}>My Assessments</NavLink>
+                    {pendingAssessments > 0 && (
+                      <motion.div
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="absolute -top-2 -right-4 px-2 py-1 bg-red-500 text-white rounded-full text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <AlertCircle className="w-3 h-3" />
+                        {pendingAssessments}
+                      </motion.div>
+                    )}
+                  </div>
+                  <NavLink href="/candidate/profile" isActive={pathname === "/candidate/profile"}>Profile</NavLink>
                 </>
               )}
 
@@ -110,18 +152,22 @@ export function Navbar() {
 // ---------------------------------------------------------------------------
 // Reusable Nav Link with Hover Effect
 // ---------------------------------------------------------------------------
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({ href, children, isActive = false }: { href: string; children: React.ReactNode; isActive?: boolean }) {
   return (
     <div className="relative group">
       <Link
         href={href}
-        className="text-sm font-medium text-neutral-400 group-hover:text-neutral-200 transition-colors py-2 block"
+        className={`text-sm font-medium transition-colors py-2 block ${isActive
+            ? "text-indigo-300"
+            : "text-neutral-400 group-hover:text-neutral-200"
+          }`}
       >
         {children}
       </Link>
       {/* Animated underline */}
       <motion.div
-        className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-300 ease-out"
+        className={`absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 origin-left ${isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+          } transition-transform duration-300 ease-out`}
       />
     </div>
   );

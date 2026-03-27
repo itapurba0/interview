@@ -47,8 +47,23 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
 
   // 3. Centralized Error Handling
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error(`API Error [${response.status}]:`, errorData);
+    let errorMessage = `Request failed with status ${response.status}`;
+    
+    try {
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } else {
+        // Handle plain text or HTML error responses
+        const errorText = await response.text();
+        errorMessage = `Server Error (${response.status}): ${errorText.substring(0, 100)}${errorText.length > 100 ? "..." : ""}`;
+      }
+    } catch (parseError) {
+      console.error("Failed to parse error response:", parseError);
+    }
+    
+    console.error(`API Error [${response.status}]:`, errorMessage);
 
     // Explicit 401 handling (e.g., token expired)
     if (response.status === 401) {
@@ -58,7 +73,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
       }
     }
 
-    throw new Error(errorData.detail || `Request failed with status ${response.status}`);
+    throw new Error(errorMessage);
   }
 
   return response.json();
