@@ -95,11 +95,13 @@ from app.api.v1.jobs import router as jobs_router
 from app.api.v1.assessments import router as assessments_router
 from app.api.v1.candidates import router as candidates_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.auth import router as auth_router
 
 app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
 app.include_router(assessments_router, prefix="/api/v1", tags=["assessments"])
 app.include_router(candidates_router, prefix="/api/v1", tags=["candidates"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 
 # NOTE: Placeholder for future routers.
 # from app.api.v1 import auth, proctoring
