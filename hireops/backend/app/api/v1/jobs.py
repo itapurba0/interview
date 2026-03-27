@@ -7,7 +7,7 @@ from typing import Optional, Annotated
 from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 
 from app.db import get_db
 from app.models import Job, Application, ApplicationStatus
@@ -99,20 +99,12 @@ async def list_jobs_hr(
     Primary HR Dashboard endpoint.
     Retrieves current jobs with SQL-level aggregations for pipeline summaries.
     """
-    # Subquery for counting pending interviews (VOICE_PENDING)
-    pending_sub = (
-        select(func.count(Application.id))
-        .where(Application.job_id == Job.id)
-        .where(Application.status == ApplicationStatus.VOICE_PENDING)
-        .scalar_subquery()
-    )
-
-    # Main query targeting the HR Job Hub grid
+    # Main query targeting the HR Job Hub grid using outer join instead of subquery
     query = (
         select(
             Job,
             func.count(Application.id).label("applicant_count"),
-            pending_sub.label("interviews_pending")
+            func.count(case((Application.status == ApplicationStatus.VOICE_PENDING, 1))).label("interviews_pending")
         )
         .outerjoin(Application, Job.id == Application.job_id)
         .where(Job.company_id == company_id)
@@ -123,16 +115,17 @@ async def list_jobs_hr(
     rows = result.all()
 
     hr_jobs = []
-    for job_obj, app_count, int_count in rows:
+    for row in rows:
+        job_obj = row.Job
         hr_jobs.append({
             "id": job_obj.id,
             "title": job_obj.title,
             "description": job_obj.description,
             "skills": job_obj.skills or [],
             "is_active": job_obj.is_active,
-            "applicant_count": app_count,
-            "interviews_pending": int_count,
-            "date_posted": job_obj.created_at.strftime("%Y-%m-%d") if job_obj.created_at else "2024-03-27"
+            "applicant_count": row.applicant_count,
+            "interviews_pending": row.interviews_pending,
+            "date_posted": job_obj.created_at.strftime("%Y-%m-%d") if getattr(job_obj, "created_at", None) else "2024-03-27"
         })
         
     return hr_jobs
