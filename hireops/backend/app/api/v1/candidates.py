@@ -95,16 +95,17 @@ async def update_candidate_profile(payload: CandidateProfileUpdate, candidate_id
     )
 
 
-@router.post("/candidates/me/resume", response_model=CandidateOut)
+@router.post("/candidates/me/resume")
 async def upload_and_parse_resume(
     file: UploadFile = File(...),
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Upload a resume PDF and parse it to extract skills, experience, and education.
+    Upload a resume PDF and parse it to extract skills, experience, education, and contact info.
     
-    Stores the parsed data in the Candidate record for the current user.
+    Returns the parsed data immediately for frontend auto-population.
+    Also stores the parsed data in the Candidate record for the current user.
     Only accessible to users with role=CANDIDATE.
     """
     if current_user.role.value != "CANDIDATE":
@@ -153,6 +154,6 @@ async def upload_and_parse_resume(
     candidate.overall_score = parsed_data.get("overall_score")
     
     await db.commit()
-    await db.refresh(candidate)
     
-    return CandidateOut.model_validate(candidate)
+    # Return parsed data directly for frontend auto-population
+    return parsed_data

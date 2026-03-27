@@ -31,6 +31,83 @@ SOFT_SKILLS = {
 }
 
 
+def extract_contact_info(text: str) -> Dict[str, Optional[str]]:
+    """
+    Extract contact information from resume text.
+    Returns dict with 'name', 'email', 'phone', 'github_url', 'linkedin_url'.
+    """
+    contact_info = {
+        "name": None,
+        "email": None,
+        "phone": None,
+        "github_url": None,
+        "linkedin_url": None
+    }
+    
+    # Extract name (usually first non-empty line that looks like a name)
+    lines = text.split('\n')
+    skip_keywords = {
+        'objective', 'summary', 'professional', 'experience', 'education', 
+        'skills', 'projects', 'portfolio', 'contact', 'phone', 'email',
+        'phone:', 'email:', 'linkedin', 'github', 'address', 'location'
+    }
+    
+    for line in lines[:10]:  # Check first 10 lines
+        line_clean = line.strip()
+        line_lower = line_clean.lower()
+        
+        # Skip empty lines, section headers, and contact info
+        if not line_clean or len(line_clean) > 80:
+            continue
+        if any(skip in line_lower for skip in skip_keywords):
+            continue
+        if '@' in line_clean:
+            continue
+        
+        # Look for a line that looks like a name (2+ words with mostly letters)
+        # Allow apostrophes, hyphens, and dots for names like O'Brien, Jean-Paul, J.R.R.
+        if re.match(r"^[A-Z][\w\s\-'\.]{3,60}[A-Z\w]$", line_clean):
+            # Count words - names typically have 2+ words
+            words = line_clean.split()
+            if len(words) >= 2 and len(words) <= 5:
+                # Check that it's not all numbers
+                if not all(w.replace('.', '').isdigit() for w in words):
+                    contact_info["name"] = line_clean
+                    break
+    
+    # If no name found yet, try to extract from "Name:" pattern
+    if not contact_info["name"]:
+        name_match = re.search(r"(?:Name|Candidate|Full\s+Name)\s*[:\-]?\s*([A-Z][A-Za-z\s\-\.\']{3,60})", text, re.IGNORECASE)
+        if name_match:
+            potential_name = name_match.group(1).strip()
+            if len(potential_name) < 100:  # Sanity check
+                contact_info["name"] = potential_name
+    
+    # Extract email
+    email_match = re.search(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", text)
+    if email_match:
+        contact_info["email"] = email_match.group(1)
+    
+    # Extract phone
+    phone_match = re.search(r"(\+?1?\s*[-.]?\(?[0-9]{3}\)?[-.]?[0-9]{3}[-.]?[0-9]{4})", text)
+    if phone_match:
+        contact_info["phone"] = phone_match.group(1).strip()
+    
+    # Extract GitHub URL
+    github_match = re.search(r"(?:github\.com|github|github\.io)[:/]*([a-zA-Z0-9_-]*)", text, re.IGNORECASE)
+    if github_match and github_match.group(1):
+        username = github_match.group(1)
+        contact_info["github_url"] = f"https://github.com/{username}"
+    
+    # Extract LinkedIn URL
+    linkedin_match = re.search(r"(?:linkedin\.com/in|linkedin\.com|linkedin)[:/]*([a-zA-Z0-9_-]*)", text, re.IGNORECASE)
+    if linkedin_match and linkedin_match.group(1):
+        username = linkedin_match.group(1)
+        contact_info["linkedin_url"] = f"https://linkedin.com/in/{username}"
+    
+    return contact_info
+
+
 def segment_sections(text: str) -> Dict[str, str]:
     """
     Segment resume text into common sections (Experience, Education, Skills, etc.).
@@ -166,6 +243,11 @@ def parse_resume_pdf(file_bytes: bytes) -> Dict[str, Any]:
     Returns:
         Dictionary containing:
         - resume_text: Full extracted text
+        - name: Extracted candidate name
+        - email: Extracted email address
+        - phone: Extracted phone number
+        - github_url: Extracted GitHub profile URL
+        - linkedin_url: Extracted LinkedIn profile URL
         - technical_skills: List of technical skills found
         - soft_skills: List of soft skills found
         - experience_years: Float representing approximate years of experience
@@ -196,6 +278,7 @@ def parse_resume_pdf(file_bytes: bytes) -> Dict[str, Any]:
         sections = segment_sections(resume_text)
         
         # Extract components
+        contact_info = extract_contact_info(resume_text)
         technical_skills, soft_skills = extract_skills(resume_text)
         experience_years = extract_experience_years(resume_text)
         education = extract_education(resume_text)
@@ -217,6 +300,11 @@ def parse_resume_pdf(file_bytes: bytes) -> Dict[str, Any]:
         
         return {
             "resume_text": resume_text,
+            "name": contact_info.get("name"),
+            "email": contact_info.get("email"),
+            "phone": contact_info.get("phone"),
+            "github_url": contact_info.get("github_url"),
+            "linkedin_url": contact_info.get("linkedin_url"),
             "technical_skills": technical_skills,
             "soft_skills": soft_skills,
             "experience_years": experience_years,

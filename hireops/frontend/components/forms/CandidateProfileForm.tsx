@@ -137,6 +137,11 @@ export default function CandidateProfileForm({
 
       const data = await fetchApi<{
         resume_text: string;
+        name: string | null;
+        email: string | null;
+        phone: string | null;
+        github_url: string | null;
+        linkedin_url: string | null;
         technical_skills: string[];
         soft_skills: string[];
         experience_years: number;
@@ -150,16 +155,19 @@ export default function CandidateProfileForm({
       });
 
       // Auto-populate form fields from parsed resume data
-      // Name extraction (if available in parsed data)
-      if (data.resume_text) {
-        // Try to extract name from first line or dedicated name field
-        const lines = data.resume_text.split('\n');
-        const firstLine = lines[0]?.trim();
+      // Name auto-population
+      if (data.name && !name) {
+        setName(data.name);
+      }
 
-        // If first line looks like a name (no special chars, reasonable length)
-        if (firstLine && firstLine.length < 50 && /^[a-zA-Z\s]+$/.test(firstLine)) {
-          setName(firstLine);
-        }
+      // GitHub URL auto-population
+      if (data.github_url && !githubUrl) {
+        setGithubUrl(data.github_url);
+      }
+
+      // LinkedIn URL auto-population
+      if (data.linkedin_url && !linkedinUrl) {
+        setLinkedinUrl(data.linkedin_url);
       }
 
       // Technical skills auto-population
