@@ -20,10 +20,16 @@ import { fetchApi } from "@/lib/api";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+interface Company {
+    id: number;
+    name: string;
+    description?: string;
+}
+
 interface Job {
     id: number;
     title: string;
-    company: string;
+    company: Company | string; // Can be object or string for backward compatibility
     description: string;
     skills: string[];
     is_active: boolean;
@@ -34,9 +40,11 @@ interface Application {
     candidate_id: number;
     job_id: number;
     status: string;
-    ai_match_score: number | null;
+    match_score: number | null;
     mcq_score?: number | null;
     coding_score?: number | null;
+    voice_score?: number | null;
+    ai_feedback?: string | null;
     created_at: string;
     updated_at: string;
     job?: Job; // Will be populated after fetch
@@ -150,7 +158,7 @@ function AssessmentCard({ application, jobData, onStartTest }: {
                             </h3>
                             <p className="text-sm text-neutral-500 flex items-center gap-1 mt-1">
                                 <Building className="w-3.5 h-3.5" />
-                                {jobData?.company || "Company"}
+                                {typeof jobData?.company === 'object' ? jobData.company?.name : jobData?.company || "Company"}
                             </p>
                         </div>
                     </div>
@@ -166,9 +174,9 @@ function AssessmentCard({ application, jobData, onStartTest }: {
                             Applied: {formatDate(application.created_at)}
                         </p>
 
-                        {application.ai_match_score !== null && (
+                        {application.match_score !== null && (
                             <div className="px-3 py-1.5 rounded-lg bg-neutral-800/40 border border-neutral-700/40 text-xs font-semibold text-neutral-300">
-                                Match: {application.ai_match_score}%
+                                Match: {application.match_score}%
                             </div>
                         )}
                     </div>

@@ -41,7 +41,11 @@ class ApplicationOut(BaseModel):
     job_id: int
     candidate_id: int
     status: str
-    ai_match_score: Optional[int]
+    match_score: Optional[int] = None
+    mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    voice_score: Optional[float] = None
+    ai_feedback: Optional[str] = None
 
 class HRJobOut(BaseModel):
     """
@@ -168,7 +172,7 @@ async def list_job_applications(
             "job_id": a.job_id,
             "candidate_id": a.candidate_id,
             "status": a.status,
-            "ai_match_score": a.ai_match_score,
+            "match_score": a.match_score,
             "candidate_name": "Applicant Hub", # Placeholder until User enrichment logic is added
             "candidate_email": "candidate@demo.com",
             "job_title": "Pipeline Context"

@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, use } from "react";
 import { motion, Variants } from "framer-motion";
-import { 
-  ArrowLeft, 
-  Users, 
-  Search, 
+import {
+  ArrowLeft,
+  Users,
+  Search,
   RefreshCw,
   ExternalLink,
   FileText
@@ -56,7 +56,7 @@ export default function JobPipelineDashboard({
   params: Promise<{ id: string }>;
 }) {
   const { id: jobId } = use(params);
-  
+
   const [applications, setApplications] = useState<HRApplication[]>([]);
   const [jobTitle, setJobTitle] = useState("Pipeline Dashboard");
   const [jobData, setJobData] = useState<any>(null);
@@ -96,12 +96,39 @@ export default function JobPipelineDashboard({
 
   const filteredApps = searchQuery.trim()
     ? applications.filter((a) =>
-        a.candidate_name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      a.candidate?.user?.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+    )
     : applications;
 
-  const getColumnApps = (key: string) =>
-    filteredApps.filter((a) => a.status === key);
+  // Dynamic column sorting based on assessment status
+  const getColumnApps = (key: string) => {
+    return filteredApps.filter((a) => {
+      switch (key) {
+        case "APPLIED":
+          // Newly applied candidates or AI screening
+          return a.status === "APPLIED" || (a.status === "AI_SCREENING" && !a.mcq_score);
+
+        case "AI_SCREENING":
+          // AI screening passed with match score >= 75, ready for tests
+          return a.status === "AI_SCREENING" && a.match_score !== null && a.match_score >= 75;
+
+        case "TEST_PENDING":
+          // MCQ test pending or in progress
+          return a.status === "TEST_PENDING" || (a.mcq_score === null && a.match_score !== null && a.match_score >= 75);
+
+        case "VOICE_PENDING":
+          // MCQ passed, voice interview pending
+          return (a.mcq_score !== null && a.coding_score !== null && a.voice_score === null);
+
+        case "SHORTLISTED":
+          // All assessments passed, ready for final interviews
+          return a.status === "SHORTLISTED" || (a.mcq_score !== null && a.coding_score !== null && a.voice_score !== null);
+
+        default:
+          return false;
+      }
+    });
+  };
 
   const rejected = filteredApps.filter((a) => a.status === "REJECTED");
 
@@ -126,56 +153,56 @@ export default function JobPipelineDashboard({
             <Link href="/hr" className="group p-2.5 bg-neutral-900/60 border border-neutral-800 rounded-xl text-neutral-500 hover:text-neutral-200 transition-all hover:bg-neutral-800">
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             </Link>
-            
+
             <div>
-               <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-semibold tracking-tight text-neutral-100">
-                    {jobTitle}
-                  </h1>
-                  <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-md text-[10px] text-indigo-400 font-bold uppercase tracking-widest leading-none">
-                    Job ID #{jobId}
-                  </span>
-               </div>
-               <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2">
-                 <Users className="w-3 h-3" />
-                 {applications.length} Candidates in Pipeline
-               </p>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-semibold tracking-tight text-neutral-100">
+                  {jobTitle}
+                </h1>
+                <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-md text-[10px] text-indigo-400 font-bold uppercase tracking-widest leading-none">
+                  Job ID #{jobId}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2">
+                <Users className="w-3 h-3" />
+                {applications.length} Candidates in Pipeline
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-             <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-600" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search candidates…"
-                  className="bg-neutral-900/60 border border-neutral-800/50 rounded-xl pl-9 pr-4 py-2 text-xs text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/40 transition-colors w-52"
-                />
-             </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-600" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search candidates…"
+                className="bg-neutral-900/60 border border-neutral-800/50 rounded-xl pl-9 pr-4 py-2 text-xs text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-indigo-500/40 transition-colors w-52"
+              />
+            </div>
 
-             <motion.button
-               whileHover={{ scale: 1.05 }}
-               whileTap={{ scale: 0.95 }}
-               onClick={handleRefresh}
-               className="p-2 bg-neutral-900/60 border border-neutral-800/50 rounded-xl text-neutral-400 hover:text-neutral-200 transition-colors"
-             >
-               <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-             </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleRefresh}
+              className="p-2 bg-neutral-900/60 border border-neutral-800/50 rounded-xl text-neutral-400 hover:text-neutral-200 transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+            </motion.button>
 
-             <button 
-               onClick={() => setIsModalOpen(true)}
-               className="flex items-center gap-2 px-5 py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/40 text-neutral-300 text-xs font-bold tracking-wider rounded-xl transition-all"
-             >
-               <FileText className="w-4 h-4" />
-               View Job Description
-             </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/40 text-neutral-300 text-xs font-bold tracking-wider rounded-xl transition-all"
+            >
+              <FileText className="w-4 h-4" />
+              View Job Description
+            </button>
 
-             <button className="flex items-center gap-2 px-5 py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/40 text-neutral-300 text-xs font-bold tracking-wider rounded-xl transition-all">
-               <ExternalLink className="w-4 h-4" />
-               Live Job
-             </button>
+            <button className="flex items-center gap-2 px-5 py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/40 text-neutral-300 text-xs font-bold tracking-wider rounded-xl transition-all">
+              <ExternalLink className="w-4 h-4" />
+              Live Job
+            </button>
           </div>
         </motion.div>
 
@@ -240,7 +267,7 @@ export default function JobPipelineDashboard({
         </div>
       </motion.div>
 
-      <JobDetailsModal 
+      <JobDetailsModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         job={jobData}

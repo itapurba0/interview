@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
 
-  # 2. Redis Event Mesh for Celery Queue & WebSocket Pub/Sub Isolation
+  # 1. Redis Event Mesh for Celery Queue & WebSocket Pub/Sub Isolation
   redis:
     image: redis:7-alpine
     container_name: hireops_redis
@@ -18,7 +18,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # 3. FastAPI REST / WebSocket Gateway
+  # 2. FastAPI REST / WebSocket Gateway
   api:
     build: 
       context: ./backend
@@ -28,7 +28,6 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
@@ -41,7 +40,7 @@ services:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # 4. Celery Base Processing Node (Resume NLP / Bulk Invites)
+  # 3. Celery Base Processing Node (Resume NLP / Bulk Invites)
   worker:
     build: 
       context: ./backend
@@ -51,7 +50,6 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     volumes:
@@ -64,5 +62,4 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4
 
 volumes:
-  postgres_data:
   redis_data:

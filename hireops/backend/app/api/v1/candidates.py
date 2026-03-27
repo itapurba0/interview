@@ -25,7 +25,7 @@ router = APIRouter()
 class CandidateProfileResponse(BaseModel):
     """
     Response schema for candidate profile with user and candidate data.
-    Includes resume parsing results and user contact information.
+    Includes resume parsing results, social links, and user contact information.
     """
     id: int
     email: str
@@ -36,6 +36,8 @@ class CandidateProfileResponse(BaseModel):
     education: Optional[dict] = None
     overall_score: Optional[int] = None
     resume_text: Optional[str] = None
+    github: Optional[str] = None
+    linkedin: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -96,7 +98,9 @@ async def get_candidate_profile(
             experience_years=None,
             education=None,
             overall_score=None,
-            resume_text=None
+            resume_text=None,
+            github=None,
+            linkedin=None
         )
     
     # Return combined user + candidate data
@@ -109,7 +113,9 @@ async def get_candidate_profile(
         experience_years=candidate.experience_years,
         education=candidate.education,
         overall_score=candidate.overall_score,
-        resume_text=candidate.resume_text
+        resume_text=candidate.resume_text,
+        github=candidate.github,
+        linkedin=candidate.linkedin
     )
 
 
@@ -176,7 +182,19 @@ async def upload_and_parse_resume(
     candidate.education = parsed_data.get("education")
     candidate.overall_score = parsed_data.get("overall_score")
     
+    # Save social links from resume
+    candidate.github = parsed_data.get("github")
+    candidate.linkedin = parsed_data.get("linkedin")
+    
+    # Update user full_name if parsed data has a valid name and current name is empty/generic
+    parsed_name = parsed_data.get("name")
+    if parsed_name and parsed_name.strip():
+        # Only update if current name is empty, "User", or similar placeholder
+        if not current_user.full_name or current_user.full_name.lower() in ["user", "candidate", "unknown", ""]:
+            current_user.full_name = parsed_name
+    
     await db.commit()
+    await db.refresh(candidate)
     
     # Return parsed data directly for frontend auto-population
     return parsed_data
@@ -229,5 +247,7 @@ async def update_candidate_profile(
         experience_years=candidate.experience_years,
         education=candidate.education,
         overall_score=candidate.overall_score,
-        resume_text=candidate.resume_text
+        resume_text=candidate.resume_text,
+        github=candidate.github,
+        linkedin=candidate.linkedin
     )

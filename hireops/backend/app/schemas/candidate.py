@@ -19,6 +19,8 @@ class CandidateUpdate(BaseModel):
     experience_years: Optional[float] = None
     education: Optional[dict] = None
     overall_score: Optional[int] = Field(None, ge=0, le=100)
+    github: Optional[str] = None
+    linkedin: Optional[str] = None
     
     class Config:
         validate_assignment = True
@@ -37,6 +39,8 @@ class CandidateOut(BaseModel):
     experience_years: Optional[float] = None
     education: Optional[dict] = None
     overall_score: Optional[int] = None
+    github: Optional[str] = None
+    linkedin: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -56,6 +60,8 @@ class CandidateIn(BaseModel):
     experience_years: Optional[float] = None
     education: Optional[dict] = None
     overall_score: Optional[int] = Field(None, ge=0, le=100)
+    github: Optional[str] = None
+    linkedin: Optional[str] = None
     
     class Config:
         validate_assignment = True

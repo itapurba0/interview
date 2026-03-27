@@ -77,6 +77,10 @@ class Candidate(Base):
     education: Mapped[Optional[dict]] = mapped_column(JSON)
     overall_score: Mapped[Optional[int]] = mapped_column(Integer)  # Parser score (0-100)
     
+    # Social links from resume
+    github: Mapped[Optional[str]] = mapped_column(String(255))
+    linkedin: Mapped[Optional[str]] = mapped_column(String(255))
+    
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -104,7 +108,7 @@ class Job(Base):
 class Application(Base):
     """
     Links a global Candidate to a specific Job Pipeline. 
-    Tracks the state machine of the progression.
+    Tracks the state machine of the progression and stores assessment results.
     """
     __tablename__ = "applications"
 
@@ -113,7 +117,15 @@ class Application(Base):
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     
     status: Mapped[ApplicationStatus] = mapped_column(Enum(ApplicationStatus), default=ApplicationStatus.APPLIED, nullable=False)
-    ai_match_score: Mapped[Optional[int]] = mapped_column(Integer) # e.g. 0-100
+    
+    # Scoring fields
+    match_score: Mapped[Optional[int]] = mapped_column(Integer)  # AI match score (0-100)
+    mcq_score: Mapped[Optional[float]] = mapped_column()  # MCQ assessment score
+    coding_score: Mapped[Optional[float]] = mapped_column()  # Coding assessment score
+    voice_score: Mapped[Optional[float]] = mapped_column()  # Voice interview score
+    
+    # Interview feedback and summary
+    ai_feedback: Mapped[Optional[str]] = mapped_column(Text)  # JSON or text feedback from AI
     
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)

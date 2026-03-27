@@ -28,11 +28,21 @@ class ApplicationCreate(BaseModel):
     job_id: int
 
 
+class CompanyOut(BaseModel):
+    """Schema for company information in responses."""
+    id: int
+    name: str
+    description: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
 class JobBasic(BaseModel):
     """Schema for basic job information in application responses."""
     id: int
     title: str
-    company: str
+    company: Optional[CompanyOut] = None
     description: Optional[str] = None
     
     class Config:
@@ -45,7 +55,11 @@ class ApplicationOut(BaseModel):
     candidate_id: int
     job_id: int
     status: str
-    ai_match_score: Optional[int] = None
+    match_score: Optional[int] = None
+    mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    voice_score: Optional[float] = None
+    ai_feedback: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -59,7 +73,11 @@ class ApplicationWithJobOut(BaseModel):
     candidate_id: int
     job_id: int
     status: str
-    ai_match_score: Optional[int] = None
+    match_score: Optional[int] = None
+    mcq_score: Optional[float] = None
+    coding_score: Optional[float] = None
+    voice_score: Optional[float] = None
+    ai_feedback: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     job: JobBasic
@@ -155,7 +173,7 @@ async def create_application(
         candidate_id=current_user.id,
         job_id=job.id,
         status=ApplicationStatus.APPLIED,
-        ai_match_score=score
+        match_score=score
     )
     
     db.add(application)
@@ -200,11 +218,11 @@ async def get_my_applications(
             detail="Candidate profile not found. Please complete your profile."
         )
     
-    # Query applications with eager-loaded job details
+    # Query applications with eager-loaded job and company details
     result = await db.execute(
         select(Application)
         .where(Application.candidate_id == current_user.id)
-        .options(joinedload(Application.job))
+        .options(joinedload(Application.job).joinedload(Job.company))
         .order_by(Application.created_at.desc())
     )
     
@@ -225,14 +243,19 @@ async def get_user_applications(
     HR/Managers see applications for jobs in their company.
     """
     if current_user.role.value == "CANDIDATE":
-        # Candidates see their own applications
+        # Candidates see their own applications with eager-loaded job and company
         result = await db.execute(
-            select(Application).where(Application.candidate_id == current_user.id)
+            select(Application)
+            .where(Application.candidate_id == current_user.id)
+            .options(joinedload(Application.job).joinedload(Job.company))
         )
     else:
-        # HR/Managers see applications for their company's jobs
+        # HR/Managers see applications for their company's jobs with eager-loaded relations
         result = await db.execute(
-            select(Application).join(Job).where(Job.company_id == current_user.company_id)
+            select(Application)
+            .join(Job)
+            .where(Job.company_id == current_user.company_id)
+            .options(joinedload(Application.job).joinedload(Job.company))
         )
     
     applications = result.scalars().all()

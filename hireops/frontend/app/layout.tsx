@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import PageTransition from "@/components/animations/PageTransition";
+import DynamicPageTransition from "@/components/animations/DynamicPageTransition";
 
 // Load Inter font for clean, premium developer-portfolio styling
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -29,9 +29,10 @@ export default function RootLayout({
 
         <main className="relative flex flex-col min-h-screen z-0 overflow-x-hidden">
           {/* PageTransition Wrapper applies AnimatePresence for layout shifts */}
-          <PageTransition>
+          {/* Loaded dynamically with ssr: false to prevent hydration mismatches from Framer Motion */}
+          <DynamicPageTransition>
             {children}
-          </PageTransition>
+          </DynamicPageTransition>
         </main>
       </body>
     </html>
