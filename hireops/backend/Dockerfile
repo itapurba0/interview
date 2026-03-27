@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
     bcrypt==3.2.0 \
     pydantic opencv-python-headless numpy \
     celery redis python-multipart pydantic[email] pydantic \
-    pdfplumber
+    pdfplumber httpx
 
 # Stage 2: Production Runtime Environment
 FROM python:3.11-slim

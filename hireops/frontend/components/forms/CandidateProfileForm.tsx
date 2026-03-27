@@ -58,6 +58,7 @@ export default function CandidateProfileForm({
   // Form state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumeFilename, setResumeFilename] = useState<string | null>(null);
+  const [hasExistingResume, setHasExistingResume] = useState(false);
   const [name, setName] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -82,21 +83,43 @@ export default function CandidateProfileForm({
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const data = await fetchApi<ProfileData>("/api/v1/candidates/profile", {
+        const data = await fetchApi<{
+          id: number;
+          email: string;
+          full_name: string;
+          technical_skills: string[] | null;
+          soft_skills: string[] | null;
+          experience_years: number | null;
+          education: Record<string, unknown> | null;
+          overall_score: number | null;
+          resume_text: string | null;
+        }>("/api/v1/candidates/me", {
+          method: "GET",
           credentials: "include",
         });
-        if (data.resume_filename) setResumeFilename(data.resume_filename);
-        if (data.name) setName(data.name);
-        if (data.photo_url) setPhotoUrl(data.photo_url);
-        if (data.github_url) setGithubUrl(data.github_url);
-        if (data.linkedin_url) setLinkedinUrl(data.linkedin_url);
-        if (data.skills.length) setSkills(data.skills);
-      } catch {
-        // First time — no profile yet
+
+        if (data) {
+          // Populate form fields with existing data
+          if (data.full_name) setName(data.full_name);
+
+          // Check if resume exists (indicated by presence of resume_text or technical_skills)
+          if (data.resume_text || (data.technical_skills && data.technical_skills.length > 0)) {
+            setHasExistingResume(true);
+            setResumeFilename("resume.pdf"); // Display as saved
+          }
+
+          // Populate skills
+          if (data.technical_skills && data.technical_skills.length > 0) {
+            setSkills(data.technical_skills);
+          }
+        }
+      } catch (err) {
+        // First time — no profile yet. This is OK.
       } finally {
         setIsLoading(false);
       }
     };
+
     fetchProfile();
   }, []);
 
@@ -197,6 +220,14 @@ export default function CandidateProfileForm({
   const removeResume = () => {
     setResumeFile(null);
     setResumeFilename(null);
+    setHasExistingResume(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const replaceResume = () => {
+    // Toggle back to upload mode
+    setHasExistingResume(false);
+    setResumeFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -270,16 +301,12 @@ export default function CandidateProfileForm({
     setSuccess(false);
 
     try {
-      await fetchApi("/api/v1/candidates/profile", {
+      await fetchApi("/api/v1/candidates/me", {
         method: "PUT",
         credentials: "include",
         body: JSON.stringify({
-          resume_filename: resumeFilename,
-          name: name || null,
-          photo_url: photoUrl || null,
-          github_url: githubUrl || null,
-          linkedin_url: linkedinUrl || null,
-          skills,
+          technical_skills: skills,
+          soft_skills: [],
         }),
       });
 
@@ -392,7 +419,36 @@ export default function CandidateProfileForm({
             className="hidden"
           />
 
-          {resumeFilename ? (
+          {hasExistingResume && !resumeFile ? (
+            // "Resume saved" state with "Replace Resume" button
+            <div className="space-y-3">
+              <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-4">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-emerald-300">
+                      Resume saved to profile
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      Your resume has been parsed and skills extracted
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={replaceResume}
+                className="w-full py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/50 text-sm text-neutral-300 font-medium rounded-xl transition-colors"
+              >
+                Replace Resume
+              </motion.button>
+            </div>
+          ) : resumeFilename && !hasExistingResume ? (
+            // Upload in progress or file selected
             <div className="space-y-2">
               <div className="flex items-center justify-between bg-indigo-500/5 border border-indigo-500/15 rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3 flex-1">
@@ -429,6 +485,7 @@ export default function CandidateProfileForm({
               )}
             </div>
           ) : (
+            // Default upload state
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}

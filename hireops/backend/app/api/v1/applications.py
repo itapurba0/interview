@@ -14,7 +14,7 @@ from datetime import datetime
 from app.db import get_db
 from app.models import User, Candidate, Job, Application, ApplicationStatus
 from app.api.dependencies import get_current_user
-from app.services.resume_parser import calculate_job_match
+from app.services.job_matcher import calculate_job_match
 
 router = APIRouter()
 
@@ -89,20 +89,24 @@ async def create_application(
             detail="Job not found."
         )
     
-    # Calculate match score
+    # Calculate match score and get AI reasoning
     candidate_dict = {
         "technical_skills": candidate.technical_skills or [],
         "soft_skills": candidate.soft_skills or [],
-        "experience_years": candidate.experience_years
+        "experience_years": candidate.experience_years,
+        "name": candidate.user.full_name if candidate.user else "Candidate",
+        "education": candidate.education or "Not provided"
     }
     
-    match_score = calculate_job_match(candidate_dict, job.description)
+    match_result = await calculate_job_match(candidate_dict, job.description)
+    score = match_result["score"]
+    reasoning = match_result["reasoning"]
     
     # Enforce 75% threshold (The Bouncer)
-    if match_score < 75:
+    if score < 75:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Match score is {match_score}%. A minimum of 75% is required to apply for this role."
+            detail=f"Match score: {score}%. Minimum required is 75%. AI Feedback: {reasoning}"
         )
     
     # Create Application record
@@ -110,7 +114,7 @@ async def create_application(
         candidate_id=current_user.id,
         job_id=job.id,
         status=ApplicationStatus.APPLIED,
-        ai_match_score=match_score
+        ai_match_score=score
     )
     
     db.add(application)

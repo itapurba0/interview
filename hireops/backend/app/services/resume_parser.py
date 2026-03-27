@@ -1,12 +1,12 @@
 """
-Resume Parser Service — FastAPI Resume PDF Processing & Job Matching
-Handles PDF extraction, skill parsing, and job-candidate matching.
+Resume Parser Service — FastAPI Resume PDF Processing
+Handles PDF extraction, skill parsing, and contact information extraction.
 """
 
 import io
 import re
-from typing import Optional, List, Dict, Any
 import logging
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -316,58 +316,3 @@ def parse_resume_pdf(file_bytes: bytes) -> Dict[str, Any]:
         logger.error(f"Error parsing resume PDF: {str(e)}")
         raise
 
-
-def calculate_job_match(candidate_data: Dict[str, Any], job_description: str) -> int:
-    """
-    Calculate job-candidate match score based on skills and experience.
-    
-    Args:
-        candidate_data: Dictionary with parsed candidate info (from parse_resume_pdf output)
-        job_description: Job description text
-        
-    Returns:
-        Integer score from 0 to 100 representing match quality
-    """
-    job_desc_lower = job_description.lower()
-    score = 0
-    
-    # Skill matching (up to 70 points)
-    candidate_technical_skills = [s.lower() for s in candidate_data.get("technical_skills", [])]
-    candidate_soft_skills = [s.lower() for s in candidate_data.get("soft_skills", [])]
-    
-    if candidate_technical_skills:
-        skill_matches = sum(1 for skill in candidate_technical_skills 
-                           if skill in job_desc_lower)
-        if skill_matches > 0:
-            tech_match_ratio = skill_matches / len(candidate_technical_skills)
-            score += int(50 * tech_match_ratio)  # Up to 50 for technical skills
-        
-        # Bonus for multiple matching technical skills
-        if skill_matches >= 3:
-            score += 15
-        elif skill_matches >= 2:
-            score += 10
-    
-    # Soft skills bonus (up to 10 points)
-    if candidate_soft_skills:
-        soft_matches = sum(1 for skill in candidate_soft_skills 
-                          if skill in job_desc_lower)
-        if soft_matches > 0:
-            score += min(10, soft_matches * 3)
-    
-    # Experience requirement check (up to 20 points)
-    experience_years = candidate_data.get("experience_years")
-    if experience_years:
-        # Look for experience requirement in job description
-        exp_req_match = re.search(r"(\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s*)?(?:experience|exp)", job_desc_lower)
-        if exp_req_match:
-            required_years = int(exp_req_match.group(1))
-            if experience_years >= required_years:
-                score += 20
-            elif experience_years >= required_years * 0.7:
-                score += 10
-        else:
-            # No specific requirement, give points for having experience
-            score += min(20, int(experience_years * 2))
-    
-    return min(100, max(0, score))

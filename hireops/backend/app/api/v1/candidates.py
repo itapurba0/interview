@@ -1,8 +1,7 @@
 """
 Candidates Profile API — HireOps Platform
-PUT /candidates/profile — Update candidate profile (resume, links, skills).
-GET /candidates/profile — Retrieve current candidate profile.
-POST /candidates/me/resume — Upload and parse resume PDF.
+GET /api/v1/candidates/me — Retrieve current candidate profile.
+POST /api/v1/candidates/me/resume — Upload and parse resume PDF.
 """
 
 from typing import Optional, Annotated
@@ -19,20 +18,35 @@ from app.schemas.candidate import CandidateOut
 
 router = APIRouter()
 
-# ---------------------------------------------------------------------------
-# In-memory profile storage (replaces DB until Alembic migrations are wired)
-# ---------------------------------------------------------------------------
-_profiles: dict[int, dict] = {}
-
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
+class CandidateProfileResponse(BaseModel):
+    """
+    Response schema for candidate profile with user and candidate data.
+    Includes resume parsing results and user contact information.
+    """
+    id: int
+    email: str
+    full_name: str
+    technical_skills: Optional[list[str]] = None
+    soft_skills: Optional[list[str]] = None
+    experience_years: Optional[float] = None
+    education: Optional[dict] = None
+    overall_score: Optional[int] = None
+    resume_text: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
 class CandidateProfileUpdate(BaseModel):
-    resume_filename: Optional[str] = None  # mock file upload — just the name
-    github_url: Optional[str] = None
-    linkedin_url: Optional[str] = None
-    skills: list[str] = []
+    """
+    Schema for updating candidate profile with manual data (skills, URLs).
+    """
+    technical_skills: Optional[list[str]] = None
+    soft_skills: Optional[list[str]] = None
 
 
 class CandidateProfileOut(BaseModel):
@@ -47,51 +61,55 @@ class CandidateProfileOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-@router.get("/candidates/profile", response_model=CandidateProfileOut)
-async def get_candidate_profile(candidate_id: int = 1):
+@router.get("/candidates/me", response_model=CandidateProfileResponse)
+async def get_candidate_profile(
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Retrieve the current candidate's profile.
-    Defaults to mock candidate_id=1 until real auth is wired.
+    Retrieve the current candidate's profile with resume parsing results.
+    
+    Returns:
+        CandidateProfileResponse with user and candidate data.
+        Returns 404 if no candidate record exists yet (user can start fresh).
+    
+    Only accessible to users with role=CANDIDATE.
     """
-    profile = _profiles.get(candidate_id, {})
-    has_data = bool(profile.get("skills") or profile.get("github_url") or profile.get("resume_filename"))
-    return CandidateProfileOut(
-        candidate_id=candidate_id,
-        resume_filename=profile.get("resume_filename"),
-        github_url=profile.get("github_url"),
-        linkedin_url=profile.get("linkedin_url"),
-        skills=profile.get("skills", []),
-        profile_complete=has_data,
-    )
-
-
-@router.put("/candidates/profile", response_model=CandidateProfileOut)
-async def update_candidate_profile(payload: CandidateProfileUpdate, candidate_id: int = 1):
-    """
-    Update the candidate's profile. Merges with existing data.
-    """
-    existing = _profiles.get(candidate_id, {})
-
-    # Merge — only overwrite non-None fields
-    if payload.resume_filename is not None:
-        existing["resume_filename"] = payload.resume_filename
-    if payload.github_url is not None:
-        existing["github_url"] = payload.github_url
-    if payload.linkedin_url is not None:
-        existing["linkedin_url"] = payload.linkedin_url
-    if payload.skills:
-        existing["skills"] = payload.skills
-
-    _profiles[candidate_id] = existing
-
-    has_data = bool(existing.get("skills") or existing.get("github_url") or existing.get("resume_filename"))
-    return CandidateProfileOut(
-        candidate_id=candidate_id,
-        resume_filename=existing.get("resume_filename"),
-        github_url=existing.get("github_url"),
-        linkedin_url=existing.get("linkedin_url"),
-        skills=existing.get("skills", []),
-        profile_complete=has_data,
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can access their profile."
+        )
+    
+    # Query candidate record
+    result = await db.execute(select(Candidate).where(Candidate.user_id == current_user.id))
+    candidate = result.scalar_one_or_none()
+    
+    # If no candidate record exists yet, return user info with empty fields
+    if not candidate:
+        return CandidateProfileResponse(
+            id=current_user.id,
+            email=current_user.email,
+            full_name=current_user.full_name,
+            technical_skills=None,
+            soft_skills=None,
+            experience_years=None,
+            education=None,
+            overall_score=None,
+            resume_text=None
+        )
+    
+    # Return combined user + candidate data
+    return CandidateProfileResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        technical_skills=candidate.technical_skills,
+        soft_skills=candidate.soft_skills,
+        experience_years=candidate.experience_years,
+        education=candidate.education,
+        overall_score=candidate.overall_score,
+        resume_text=candidate.resume_text
     )
 
 
@@ -103,6 +121,10 @@ async def upload_and_parse_resume(
 ):
     """
     Upload a resume PDF and parse it to extract skills, experience, education, and contact info.
+    
+    This is an UPSERT operation:
+    - If a candidate record exists for the user, it updates the fields
+    - If no record exists, it creates a new one
     
     Returns the parsed data immediately for frontend auto-population.
     Also stores the parsed data in the Candidate record for the current user.
@@ -137,15 +159,16 @@ async def upload_and_parse_resume(
             detail=f"Error parsing resume PDF: {str(e)}"
         )
     
-    # Find or create Candidate record
+    # Find or create Candidate record (UPSERT)
     result = await db.execute(select(Candidate).where(Candidate.user_id == current_user.id))
     candidate = result.scalar_one_or_none()
     
     if not candidate:
+        # Create new candidate record
         candidate = Candidate(user_id=current_user.id)
         db.add(candidate)
     
-    # Update with parsed data
+    # Update with parsed data (both for new and existing records)
     candidate.resume_text = parsed_data.get("resume_text")
     candidate.technical_skills = parsed_data.get("technical_skills")
     candidate.soft_skills = parsed_data.get("soft_skills")
@@ -157,3 +180,54 @@ async def upload_and_parse_resume(
     
     # Return parsed data directly for frontend auto-population
     return parsed_data
+
+
+@router.put("/candidates/me", response_model=CandidateProfileResponse)
+async def update_candidate_profile(
+    payload: CandidateProfileUpdate,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update candidate profile with manually entered or edited data.
+    
+    This endpoint allows updating skills and other data without uploading a resume.
+    Used by the "Save Profile" button on the profile setup page.
+    
+    Only accessible to users with role=CANDIDATE.
+    """
+    if current_user.role.value != "CANDIDATE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only candidates can update their profile."
+        )
+    
+    # Find or create Candidate record
+    result = await db.execute(select(Candidate).where(Candidate.user_id == current_user.id))
+    candidate = result.scalar_one_or_none()
+    
+    if not candidate:
+        # Create new candidate record if it doesn't exist
+        candidate = Candidate(user_id=current_user.id)
+        db.add(candidate)
+    
+    # Update with provided data (only non-None fields)
+    if payload.technical_skills is not None:
+        candidate.technical_skills = payload.technical_skills
+    if payload.soft_skills is not None:
+        candidate.soft_skills = payload.soft_skills
+    
+    await db.commit()
+    
+    # Return updated profile
+    return CandidateProfileResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        technical_skills=candidate.technical_skills,
+        soft_skills=candidate.soft_skills,
+        experience_years=candidate.experience_years,
+        education=candidate.education,
+        overall_score=candidate.overall_score,
+        resume_text=candidate.resume_text
+    )
