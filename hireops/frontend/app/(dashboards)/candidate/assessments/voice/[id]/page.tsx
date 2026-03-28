@@ -19,6 +19,7 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
 
     const [isConnected, setIsConnected] = useState(false);
     const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
 
     const wsRef = useRef<WebSocket | null>(null);
@@ -44,6 +45,34 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
         }, 2200);
     }, []);
 
+    const playAiAudio = useCallback((audioB64: string) => {
+        if (!audioB64) {
+            return;
+        }
+
+        if (aiSpeakingTimerRef.current) {
+            window.clearTimeout(aiSpeakingTimerRef.current);
+            aiSpeakingTimerRef.current = null;
+        }
+
+        const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
+        setIsAiSpeaking(true);
+
+        audio.onended = () => {
+            setIsAiSpeaking(false);
+        };
+
+        audio.onerror = () => {
+            setIsAiSpeaking(false);
+        };
+
+        audio
+            .play()
+            .catch(() => {
+                setIsAiSpeaking(false);
+            });
+    }, []);
+
     const handleIncomingMessage = useCallback(
         (event: MessageEvent) => {
             if (typeof event.data !== "string") {
@@ -52,30 +81,66 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
 
             try {
                 const payload = JSON.parse(event.data);
-                const text = payload.text ?? payload.message ?? "";
+                const text = typeof payload.text === "string" ? payload.text : typeof payload.message === "string" ? payload.message : "";
+                const audioB64 = typeof payload.audio_b64 === "string" ? payload.audio_b64 : "";
 
                 if (payload.event === "ai_speaking") {
-                    if (typeof text === "string" && text.length) {
+                    if (text.length) {
                         pushTranscript("ai", text);
                     }
                     pulseAi();
                 } else if (payload.event === "ai_context") {
-                    if (typeof text === "string" && text.length) {
+                    if (text.length) {
                         pushTranscript("system", text);
                     }
                 } else if (payload.event === "error") {
-                    if (typeof text === "string" && text.length) {
+                    if (text.length) {
                         pushTranscript("system", text);
                     }
-                } else if (typeof text === "string" && text.length) {
+                } else if (text.length) {
                     pushTranscript("system", text);
+                }
+
+                if (audioB64) {
+                    playAiAudio(audioB64);
                 }
             } catch {
                 pushTranscript("system", "Received malformed realtime payload.");
             }
         },
-        [pushTranscript, pulseAi]
+        [playAiAudio, pushTranscript, pulseAi]
     );
+
+    const handlePushToTalk = useCallback(() => {
+        const recorder = mediaRecorderRef.current;
+
+        if (!recorder) {
+            pushTranscript("system", "Preparing your microphone stream. Try again in a moment.");
+            return;
+        }
+
+        if (!isConnected) {
+            pushTranscript("system", "Waiting for the AI connection to be ready.");
+            return;
+        }
+
+        if (recorder.state === "inactive") {
+            try {
+                recorder.start(250);
+                setIsRecording(true);
+                pushTranscript("system", "Recording... speak now and tap again to stop.");
+            } catch {
+                pushTranscript("system", "Unable to start recording right now. Please try again.");
+            }
+            return;
+        }
+
+        if (recorder.state === "recording") {
+            recorder.stop();
+            setIsRecording(false);
+            pushTranscript("system", "Audio chunk sent. Tap again when you are ready.");
+        }
+    }, [isConnected, pushTranscript]);
 
     const stopRecording = useCallback(() => {
         if (!mediaRecorderRef.current) {
@@ -109,6 +174,7 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
 
             setIsConnected(false);
             setIsAiSpeaking(false);
+            setIsRecording(false);
 
             if (shouldNavigate) {
                 router.push("/dashboards/candidate/congratulations");
@@ -134,12 +200,11 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
             const recorder = new MediaRecorder(stream);
             mediaRecorderRef.current = recorder;
 
-            recorder.ondataavailable = async (event) => {
+            recorder.ondataavailable = (event) => {
                 if (!event.data.size || wsRef.current?.readyState !== WebSocket.OPEN) {
                     return;
                 }
-                const buffer = await event.data.arrayBuffer();
-                wsRef.current?.send(buffer);
+                wsRef.current?.send(event.data);
             };
 
             const socket = new WebSocket(`ws://localhost:8000/api/v1/interview/stream/${id}`);
@@ -148,8 +213,7 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
 
             socket.onopen = () => {
                 setIsConnected(true);
-                pushTranscript("system", "Connected. The AI is waiting for your voice.");
-                recorder.start(250);
+                pushTranscript("system", "Connected. Use Push to Talk below to send your voice.");
             };
 
             socket.onmessage = handleIncomingMessage;
@@ -160,6 +224,7 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
             socket.onclose = () => {
                 setIsConnected(false);
                 stopRecording();
+                setIsRecording(false);
                 wsRef.current = null;
             };
         } catch {
@@ -267,16 +332,36 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
                     </div>
 
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <button
-                            type="button"
-                            onClick={handleEndInterview}
-                            className="w-full md:w-auto px-6 py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm tracking-widest transition hover:bg-red-400 shadow-[0_10px_40px_rgba(239,68,68,0.4)]"
-                        >
-                            End Interview
-                        </button>
-                        <p className="text-xs text-neutral-500 max-w-xl">
-                            Ending the interview closes your microphone stream and moves you to the Congratulations page.
-                        </p>
+                        <div className="flex flex-wrap gap-3 w-full md:w-auto">
+                            <button
+                                type="button"
+                                onClick={handleEndInterview}
+                                className="w-full md:w-auto px-6 py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm tracking-widest transition hover:bg-red-400 shadow-[0_10px_40px_rgba(239,68,68,0.4)]"
+                            >
+                                End Interview
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handlePushToTalk}
+                                disabled={!isConnected || !mediaRecorderRef.current}
+                                aria-pressed={isRecording}
+                                className={`w-full md:w-auto px-6 py-3 rounded-2xl font-semibold text-sm tracking-widest transition shadow-[0_10px_40px_rgba(56,189,248,0.35)] ${isRecording ? "bg-teal-500 hover:bg-teal-400" : "bg-sky-500 hover:bg-sky-400"} text-white disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                                {isRecording ? "Stop Recording" : "Push to Talk"}
+                            </button>
+                        </div>
+                        <div className="flex flex-col gap-1 text-xs text-neutral-500 max-w-xl">
+                            <p>
+                                Ending the interview closes your microphone stream and moves you to the Congratulations
+                                page.
+                            </p>
+                            <p>
+                                {isRecording
+                                    ? "Recording... Tap again to send the current snippet."
+                                    : "Push to Talk streams your voice once the connection is live."
+                                }
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
