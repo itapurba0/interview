@@ -321,7 +321,7 @@ function AssessmentHubContent() {
     }, []);
 
     // Handle test start
-    const handleStartTest = (type: "mcq" | "coding", applicationId: number) => {
+    const handleStartTest = (type: "mcq" | "coding" | "voice", applicationId: number) => {
         if (type === "mcq") {
             router.push(`/candidate/assessments/mcq/${applicationId}`);
         } else if (type === "voice") {
