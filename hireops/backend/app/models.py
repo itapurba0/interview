@@ -16,6 +16,8 @@ class ApplicationStatus(str, enum.Enum):
     VOICE_PENDING = "VOICE_PENDING"            # Step 4: Async voice interview
     SHORTLISTED = "SHORTLISTED"                # Step 5: Passed all async steps
     SCHEDULED = "SCHEDULED"                    # Step 6: Scheduled with human manager
+    COMPLETED = "COMPLETED"                    # Interview completed (AI + human review)
+    HIRED = "HIRED"                            # Candidate accepted for the role
 
 class UserRole(str, enum.Enum):
     CANDIDATE = "CANDIDATE"                    # Global user

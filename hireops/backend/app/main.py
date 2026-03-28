@@ -113,6 +113,7 @@ from app.api.v1.candidates import router as candidates_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.applications import router as applications_router
+from app.api.v1.interview import router as interview_router
 
 app.include_router(jobs_router, prefix="/api/v1", tags=["jobs"])
 app.include_router(assessments_router, prefix="/api/v1", tags=["assessments"])
@@ -120,6 +121,7 @@ app.include_router(candidates_router, prefix="/api/v1", tags=["candidates"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["analytics"])
 app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 app.include_router(applications_router, prefix="/api/v1", tags=["applications"])
+app.include_router(interview_router, prefix="/api/v1/interview", tags=["interview"])
 
 # NOTE: Placeholder for future routers.
 # from app.api.v1 import auth, proctoring
