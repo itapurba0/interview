@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, Variants } from "framer-motion";
 import { Loader2, AlertTriangle, AlertCircle, ChevronRight } from "lucide-react";
@@ -10,6 +10,8 @@ import { ToastContainer, Toast } from "@/components/candidate/ToastContainer";
 import { JobCard, Job, ApplicationResult } from "@/components/candidate/JobCard";
 import { JobDetailsModal } from "@/components/shared/JobDetailsModal";
 import { fetchApi } from "@/lib/api";
+import useSWR from "swr";
+import { swrFetcher } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Animation variants
@@ -38,9 +40,6 @@ function CandidateDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   // Map job_id → full application object with status  
@@ -82,57 +81,40 @@ function CandidateDashboardContent() {
   }, [searchParams, addToast, router]);
 
   // ------------------------------------------------------------------
-  // Fetch jobs from backend on mount
+  // SWR: Fetch jobs + applications with global cache
   // ------------------------------------------------------------------
+  const { data: jobsData, isLoading: jobsLoading, error: jobsError } = useSWR<Job[]>(
+    "/api/v1/jobs",
+    swrFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 }
+  );
+
+  const { data: appsData, isLoading: appsLoading } = useSWR<Array<{ id: number; job_id: number; candidate_id: number; status: string; ai_match_score?: number; created_at: string; updated_at: string }>>(
+    "/api/v1/applications",
+    swrFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 }
+  );
+
+  const jobs = jobsData ?? [];
+  const loading = (jobsLoading && !jobsData) || (appsLoading && !appsData);
+  const error = jobsError ? (jobsError instanceof Error ? jobsError.message : String(jobsError)) : null;
+
+  // Seed applications from SWR data (runs once when data arrives)
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchJobsAndApplications() {
-      try {
-        setLoading(true);
-
-        // Fetch jobs
-        const jobsRes = await fetch("/api/v1/jobs");
-        if (!jobsRes.ok) throw new Error(`Jobs API returned ${jobsRes.status}`);
-        const jobsData: Job[] = await jobsRes.json();
-
-        // Fetch user's existing applications
-        const appsRes = await fetchApi<Array<{ id: number; job_id: number; candidate_id: number; status: string; ai_match_score?: number; created_at: string; updated_at: string }>>("/api/v1/applications");
-
-        if (!cancelled) {
-          setJobs(jobsData);
-
-          // Populate applications state with full application data from backend
-          const appliedApps: Record<number, ApplicationResult> = {};
-          if (Array.isArray(appsRes)) {
-            appsRes.forEach((app) => {
-              appliedApps[app.job_id] = {
-                id: app.id,
-                job_id: app.job_id,
-                candidate_id: app.candidate_id,
-                status: app.status as "APPLIED" | "AI_SCREENING" | "TEST_PENDING" | "REJECTED" | "VOICE_PENDING" | "SHORTLISTED" | "SCHEDULED",
-                ai_match_score: app.ai_match_score || 0
-              };
-            });
-          }
-          setApplications(appliedApps);
-          setError(null);
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : "Unknown error";
-          setError(message);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    if (appsData && Array.isArray(appsData)) {
+      const appliedApps: Record<number, ApplicationResult> = {};
+      appsData.forEach((app) => {
+        appliedApps[app.job_id] = {
+          id: app.id,
+          job_id: app.job_id,
+          candidate_id: app.candidate_id,
+          status: app.status as "APPLIED" | "AI_SCREENING" | "TEST_PENDING" | "REJECTED" | "VOICE_PENDING" | "SHORTLISTED" | "SCHEDULED",
+          ai_match_score: app.ai_match_score || 0
+        };
+      });
+      setApplications(appliedApps);
     }
-
-    fetchJobsAndApplications();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [appsData]);
 
   // ------------------------------------------------------------------
   // Apply handler

@@ -94,3 +94,9 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
 
   return response.json();
 }
+
+/**
+ * SWR-compatible fetcher.
+ * Delegates to fetchApi so JWT injection and error handling are consistent.
+ */
+export const swrFetcher = <T>(url: string): Promise<T> => fetchApi<T>(url);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useMemo, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { motion, Variants } from "framer-motion";
 import {
@@ -16,7 +16,8 @@ import {
     Calendar,
     Mic,
 } from "lucide-react";
-import { fetchApi } from "@/lib/api";
+import useSWR from "swr";
+import { swrFetcher } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -263,62 +264,31 @@ function AssessmentCard({ application, jobData, onStartTest }: {
 // ---------------------------------------------------------------------------
 function AssessmentHubContent() {
     const router = useRouter();
-    const [applications, setApplications] = useState<Application[]>([]);
-    const [jobs, setJobs] = useState<Record<number, Job>>({});
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
 
-    // Fetch applications and jobs on mount
-    useEffect(() => {
-        let cancelled = false;
+    // SWR: fetch once, cache globally across tab switches
+    const { data: rawApps, isLoading, error } = useSWR<Application[]>(
+        "/api/v1/applications/me",
+        swrFetcher,
+        { revalidateOnFocus: false, dedupingInterval: 10000 }
+    );
 
-        async function loadData() {
-            try {
-                setLoading(true);
+    // Derive sorted applications + jobs map from cached data
+    const applications = useMemo(() => {
+        if (!rawApps || !Array.isArray(rawApps)) return [];
+        return [...rawApps].sort((a, b) => {
+            const aIsPending = ["TEST_PENDING", "VOICE_PENDING"].includes(a.status) ? 0 : 1;
+            const bIsPending = ["TEST_PENDING", "VOICE_PENDING"].includes(b.status) ? 0 : 1;
+            return aIsPending - bIsPending;
+        });
+    }, [rawApps]);
 
-                // Fetch applications with eager-loaded job details from /me endpoint
-                const appsRes = await fetchApi<Application[]>("/api/v1/applications/me");
-
-                if (cancelled) return;
-
-                // Sort: Pending tests at top
-                const sortedApps = Array.isArray(appsRes)
-                    ? [...appsRes].sort((a, b) => {
-                        const aIsPending = ["TEST_PENDING", "VOICE_PENDING"].includes(a.status) ? 0 : 1;
-                        const bIsPending = ["TEST_PENDING", "VOICE_PENDING"].includes(b.status) ? 0 : 1;
-                        return aIsPending - bIsPending;
-                    })
-                    : [];
-
-                setApplications(sortedApps);
-
-                // Build jobs map from applications that have job data included
-                const jobsMap: Record<number, Job> = {};
-                sortedApps.forEach((app) => {
-                    if (app.job) {
-                        jobsMap[app.job_id] = app.job;
-                    }
-                });
-
-                if (!cancelled) {
-                    setJobs(jobsMap);
-                    setError(null);
-                }
-            } catch (err: unknown) {
-                if (!cancelled) {
-                    const message = err instanceof Error ? err.message : "Unknown error";
-                    setError(message);
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        }
-
-        loadData();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    const jobs = useMemo(() => {
+        const map: Record<number, Job> = {};
+        applications.forEach((app) => {
+            if (app.job) map[app.job_id] = app.job;
+        });
+        return map;
+    }, [applications]);
 
     // Handle test start
     const handleStartTest = (type: "mcq" | "coding" | "voice", applicationId: number) => {
@@ -331,8 +301,8 @@ function AssessmentHubContent() {
         }
     };
 
-    // Loading state
-    if (loading) {
+    // Loading state — only show when NO cached data at all
+    if (isLoading && !rawApps) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-neutral-400">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
@@ -347,7 +317,7 @@ function AssessmentHubContent() {
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4 text-center">
                 <AlertTriangle className="w-10 h-10 text-amber-400" />
                 <h2 className="text-xl font-medium text-neutral-200">Unable to Load Assessments</h2>
-                <p className="text-sm text-neutral-500 max-w-md">{error}</p>
+                <p className="text-sm text-neutral-500 max-w-md">{error instanceof Error ? error.message : String(error)}</p>
             </div>
         );
     }
