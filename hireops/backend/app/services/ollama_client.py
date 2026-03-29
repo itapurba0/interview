@@ -15,18 +15,19 @@ logger = logging.getLogger(__name__)
 # Use host.docker.internal for Docker Desktop to reach host machine
 # Use localhost for standalone/non-containerized environments
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-OLLAMA_MODEL = "qwen3.5:2b"
-OLLAMA_TIMEOUT = 180.0
+OLLAMA_MODEL = "qwen3:8b"
+OLLAMA_TIMEOUT = 240.0
 
 
-async def call_ollama(prompt: str, model: str = OLLAMA_MODEL) -> Optional[str]:
+async def call_ollama(prompt: str, model: str = OLLAMA_MODEL, response_format: str = "json") -> Optional[str]:
     """
     Call Ollama API with a given prompt.
     
     Args:
         prompt: The complete prompt to send to Ollama
-        model: The model name to use (default: qwen3.5:2b)
-        
+        model: The model name to use (default: qwen3:8b)
+        response_format: The format of the response (default: json)
+
     Returns:
         Response text from Ollama, or None if request fails
         
@@ -44,7 +45,7 @@ async def call_ollama(prompt: str, model: str = OLLAMA_MODEL) -> Optional[str]:
                     "model": model,
                     "prompt": prompt,
                     "stream": False,
-                    "format": "json",
+                    "format": response_format,
                     "options": {
                         "temperature": 0.0  # Deterministic scoring: 0 = no randomness
                     }

@@ -3,12 +3,56 @@ Assessments API — HireOps Platform
 Handles assessment questions (GET) and submission with proctoring telemetry (POST).
 """
 
-import random
-from typing import Optional
+from typing import Annotated, Optional
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
-from fastapi import APIRouter
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
+from app.api.dependencies import get_current_user
+from app.db import AsyncSessionLocal, get_db
+from app.models import Application, ApplicationStatus, User
+from app.services.assessment_generator import generate_custom_mcq
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def backfill_pending_mcq_task(application_ids: list[int]) -> None:
+    if not application_ids:
+        return
+
+    try:
+        async with AsyncSessionLocal() as session:
+            for application_id in application_ids:
+                stmt = (
+                    select(Application)
+                    .where(Application.id == application_id)
+                    .options(
+                        joinedload(Application.job),
+                        joinedload(Application.candidate).joinedload(User.candidate_profile),
+                    )
+                )
+                result = await session.execute(stmt)
+                application = result.scalar_one_or_none()
+                if not application or application.custom_mcq_data:
+                    continue
+
+                candidate_profile = getattr(application.candidate, "candidate_profile", None)
+                resume_summary = (candidate_profile.resume_text or "").strip() if candidate_profile else ""
+                job_skills_list = application.job.skills or [] if application.job else []
+                job_skills = ", ".join(job_skills_list)
+                job_title = application.job.title if application.job else "General Technical Role"
+
+                mcq_payload = await generate_custom_mcq(resume_summary, job_title, job_skills)
+                application.custom_mcq_data = mcq_payload
+                await session.commit()
+                logger.info("Backfilled MCQ for application %s", application_id)
+    except Exception:
+        logger.exception("Backfill task failed")
 
 # ---------------------------------------------------------------------------
 # Assessment to Application Mapping
@@ -208,6 +252,76 @@ async def get_assessment(assessment_id: str):
         "time_limit_minutes": source["time_limit_minutes"],
         "questions": safe_questions,
     }
+
+
+@router.get("/assessments/mcq/{application_id}")
+async def get_custom_mcq(
+    application_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    statement = (
+        select(Application)
+        .where(Application.id == application_id)
+        .options(
+            joinedload(Application.candidate).joinedload(User.candidate_profile),
+            joinedload(Application.job),
+        )
+    )
+    result = await db.execute(statement)
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if application.candidate_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this assessment")
+
+    if application.custom_mcq_data:
+        return {
+            "application_id": application_id,
+            "questions": application.custom_mcq_data.get("questions", []),
+        }
+
+    candidate_profile = getattr(application.candidate, "candidate_profile", None)
+    resume_summary = (candidate_profile.resume_text or "").strip() if candidate_profile else ""
+    job_title = application.job.title if application.job else "General Technical Role"
+    job_skills_list = application.job.skills or [] if application.job else []
+    job_skills = ", ".join(job_skills_list)
+
+    mcq_payload = await generate_custom_mcq(resume_summary, job_title, job_skills)
+    application.custom_mcq_data = mcq_payload
+    await db.commit()
+
+    return {
+        "application_id": application_id,
+        "questions": mcq_payload.get("questions", []),
+    }
+
+
+@router.post("/assessments/backfill-mcq")
+async def backfill_existing_mcqs(
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role.value == "CANDIDATE":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    eligible_statuses = [ApplicationStatus.APPLIED, ApplicationStatus.TEST_PENDING]
+    stmt = (
+        select(Application.id)
+        .where(Application.status.in_(eligible_statuses))
+        .where(Application.custom_mcq_data == None)
+    )
+    result = await db.execute(stmt)
+    application_ids = result.scalars().all()
+
+    if not application_ids:
+        return {"status": "no applications require backfill"}
+
+    background_tasks.add_task(backfill_pending_mcq_task, application_ids)
+    return {"status": "queued", "applications": len(application_ids)}
 
 
 @router.post("/assessments", response_model=AssessmentResult)

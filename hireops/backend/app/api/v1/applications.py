@@ -8,19 +8,50 @@ from typing import Annotated, Optional
 import random
 import logging
 from pydantic import BaseModel, ConfigDict
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from datetime import datetime
 
-from app.db import get_db
+from app.db import get_db, AsyncSessionLocal
 from app.models import User, Candidate, Job, Application, ApplicationStatus
 from app.api.dependencies import get_current_user
 from app.services.job_matcher import calculate_job_match
+from app.services.assessment_generator import generate_custom_mcq
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def background_generate_mcq_task(application_id: int) -> None:
+    """Warm up the MCQ payload asynchronously after the match score succeeds."""
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Application)
+                .where(Application.id == application_id)
+                .options(joinedload(Application.job))
+            )
+            application = result.scalar_one_or_none()
+            if not application or not application.job:
+                return
+
+            candidate_result = await db.execute(
+                select(Candidate).where(Candidate.user_id == application.candidate_id)
+            )
+            candidate = candidate_result.scalar_one_or_none()
+
+            resume_summary = (
+                candidate.resume_text if candidate and candidate.resume_text else "Resume data unavailable."
+            )
+            job_skills = ", ".join(application.job.skills or [])
+
+            mcq_payload = await generate_custom_mcq(resume_summary, application.job.title, job_skills)
+            application.custom_mcq_data = mcq_payload
+            await db.commit()
+    except Exception:
+        logger.exception("Failed to generate MCQs for application %s", application_id)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +177,7 @@ class ApplicationHROut(BaseModel):
 @router.post("/applications", response_model=ApplicationOut, status_code=status.HTTP_201_CREATED)
 async def create_application(
     payload: ApplicationCreate,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: AsyncSession = Depends(get_db)
 ):
@@ -239,7 +271,8 @@ async def create_application(
     db.add(application)
     await db.commit()
     await db.refresh(application)
-    
+    background_tasks.add_task(background_generate_mcq_task, application.id)
+
     return ApplicationOut.model_validate(application)
 
 
