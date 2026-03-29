@@ -61,5 +61,29 @@ services:
         condition: service_started
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4
 
+  # 4. LiveKit AI Voice Agent Worker
+  ai_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hireops_ai_worker
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    command: python agent.py start
+
 volumes:
   redis_data:
