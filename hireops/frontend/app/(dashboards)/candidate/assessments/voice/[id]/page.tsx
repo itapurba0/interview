@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -30,8 +30,8 @@ const LiveKitScene = () => {
     );
 };
 
-export default function VoiceInterviewRoom({ params }: { params: { id: string } }) {
-    const { id } = params;
+export default function VoiceInterviewRoom() {
+    const { id } = useParams() ?? {};
     const router = useRouter();
 
     const [token, setToken] = useState("");
@@ -54,6 +54,9 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
 
         const fetchToken = async () => {
             try {
+                if (!id) {
+                    throw new Error("Missing application identifier for LiveKit token.");
+                }
                 const response = await fetch(`/api/v1/interview/token?application_id=${id}`);
                 if (!response.ok) {
                     const message = (await response.text()) || "Failed to acquire a token.";
@@ -86,17 +89,20 @@ export default function VoiceInterviewRoom({ params }: { params: { id: string } 
     }, [id, addStatus]);
 
     const handleEndInterview = useCallback(() => {
-        router.push("/dashboards/candidate/congratulations");
+        // router.push("/dashboards/candidate/congratulations");
     }, [router]);
 
     const handleForceSubmit = useCallback(
         (_warningCount: number) => {
-            router.push("/dashboards/candidate/congratulations");
+            // router.push("/dashboards/candidate/congratulations");
         },
         [router]
     );
 
-    const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "";
+    const livekitUrl =
+        process.env.LIVEKIT_URL ??
+        process.env.NEXT_PUBLIC_LIVEKIT_URL ??
+        "";
     const canConnect = Boolean(token && livekitUrl);
 
     return (

@@ -216,6 +216,10 @@ class AssessmentSubmission(BaseModel):
     time_taken_seconds: Optional[int] = None
 
 
+class MCQSubmission(BaseModel):
+    answers: dict[int, str]
+
+
 class AssessmentResult(BaseModel):
     assessment_id: str
     application_id: int | None = None
@@ -296,6 +300,58 @@ async def get_custom_mcq(
     return {
         "application_id": application_id,
         "questions": mcq_payload.get("questions", []),
+    }
+
+
+@router.post("/assessments/mcq/{application_id}/submit")
+async def submit_custom_mcq(
+    application_id: int,
+    payload: MCQSubmission,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    statement = select(Application).where(Application.id == application_id)
+    result = await db.execute(statement)
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if application.candidate_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to submit this assessment")
+
+    questions = (application.custom_mcq_data or {}).get("questions")
+    if not questions:
+        raise HTTPException(status_code=400, detail="MCQ payload is not available yet")
+
+    correct = 0
+    mcq_total = len(questions)
+
+    for idx, question in enumerate(questions):
+        submitted_answer = payload.answers.get(idx)
+        correct_answer = question.get("correct_answer")
+        if submitted_answer and correct_answer and submitted_answer == correct_answer:
+            correct += 1
+
+    score = round((correct / mcq_total) * 100) if mcq_total else 0
+    application.mcq_score = score
+    application.status = ApplicationStatus.TEST_PENDING
+    await db.commit()
+
+    logger.info(
+        "MCQ submitted for application %s: %s/%s correct, score %s",
+        application_id,
+        correct,
+        mcq_total,
+        score,
+    )
+
+    return {
+        "application_id": application_id,
+        "mcq_score": score,
+        "mcq_total": mcq_total,
+        "mcq_correct": correct,
+        "status": application.status.value,
     }
 
 

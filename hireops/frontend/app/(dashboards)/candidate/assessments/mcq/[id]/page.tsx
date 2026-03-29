@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, use } from "react";
+import { useCallback, useEffect, useMemo, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -44,6 +44,11 @@ export default function MCQTestPage({
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
 
+    const storageKey = useMemo(
+        () => `hireops_mcq_answers_${applicationId}`,
+        [applicationId]
+    );
+
     const totalQuestions = questions.length;
     const answeredCount = Object.keys(selectedAnswers).length;
     const currentQuestion = questions[currentIndex];
@@ -66,7 +71,6 @@ export default function MCQTestPage({
                 if (cancelled) return;
                 const fetchedQuestions = payload.questions ?? [];
                 setQuestions(fetchedQuestions);
-                setSelectedAnswers({});
                 setCurrentIndex(0);
             } catch (err: unknown) {
                 if (cancelled) return;
@@ -87,42 +91,77 @@ export default function MCQTestPage({
         };
     }, [applicationId]);
 
-    const calculateScore = useCallback(() => {
-        if (!questions.length) return 0;
-        let correct = 0;
-        questions.forEach((question, idx) => {
-            if (selectedAnswers[idx] === question.correct_answer) {
-                correct++;
+    useEffect(() => {
+        if (!questions.length || typeof window === "undefined") return;
+
+        try {
+            const stored = window.localStorage.getItem(storageKey);
+            if (!stored) return;
+            const parsed = JSON.parse(stored);
+            if (typeof parsed !== "object" || parsed === null) return;
+
+            const normalized: Record<number, string> = {};
+            Object.entries(parsed).forEach(([key, value]) => {
+                const idx = Number(key);
+                if (Number.isFinite(idx) && typeof value === "string") {
+                    normalized[idx] = value;
+                }
+            });
+
+            if (Object.keys(normalized).length) {
+                setSelectedAnswers(normalized);
             }
-        });
-        return (correct / questions.length) * 100;
-    }, [questions, selectedAnswers]);
+        } catch {
+            /* ignore invalid cached answers */
+        }
+    }, [questions.length, storageKey]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (!Object.keys(selectedAnswers).length) {
+            window.localStorage.removeItem(storageKey);
+            return;
+        }
+
+        window.localStorage.setItem(storageKey, JSON.stringify(selectedAnswers));
+    }, [selectedAnswers, storageKey]);
 
     const handleSubmit = useCallback(
         async (violationCount: number = violations) => {
             if (isSubmitting || isCompleted || !questions.length) return;
+            const resolvedViolations = Math.max(violations, violationCount);
+            setViolations(resolvedViolations);
             setSubmitError(null);
             setIsSubmitting(true);
 
-            const scorePercent = calculateScore();
-            setFinalScore(scorePercent);
+            const answersPayload: Record<number, string> = {};
+            Object.entries(selectedAnswers).forEach(([index, answer]) => {
+                const normalizedIndex = Number(index);
+                if (Number.isFinite(normalizedIndex) && answer) {
+                    answersPayload[normalizedIndex] = answer;
+                }
+            });
 
+            let scorePercent = 0;
             try {
-                await fetchApi(`/api/v1/applications/${applicationId}/mcq`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ score: scorePercent }),
-                });
-                const nextStatus = violationCount > 0 ? "NEEDS_REVIEW" : "VOICE_PENDING";
-                await fetchApi(`/api/v1/applications/${applicationId}/status`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ status: nextStatus }),
-                });
+                const response = await fetchApi(
+                    `/api/v1/assessments/mcq/${applicationId}/submit`,
+                    {
+                        method: "POST",
+                        body: JSON.stringify({ answers: answersPayload }),
+                    }
+                );
+                scorePercent = Number(response.mcq_score ?? 0);
+                setFinalScore(scorePercent);
+                if (typeof window !== "undefined") {
+                    window.localStorage.removeItem(storageKey);
+                }
             } catch (err: unknown) {
-                const message = err instanceof Error ? err.message : "Failed to save score.";
+                const message = err instanceof Error ? err.message : "Failed to grade your test.";
                 console.error("MCQ submit error:", err);
                 setSubmitError(message);
-            } finally {
                 setIsSubmitting(false);
+                return;
             }
 
             try {
@@ -133,12 +172,13 @@ export default function MCQTestPage({
                 /* ignore */
             }
 
+            setIsSubmitting(false);
             setIsCompleted(true);
             setTimeout(() => {
-                router.push("/candidate/assessments");
+                router.push("/candidate/assessment");
             }, 1500);
         },
-        [applicationId, calculateScore, isSubmitting, isCompleted, router, questions, violations]
+        [applicationId, isSubmitting, isCompleted, router, questions, selectedAnswers, violations, storageKey]
     );
 
     const handleViolationTick = useCallback((count: number) => {
@@ -231,9 +271,11 @@ export default function MCQTestPage({
                     </div>
                     <div className="text-center">
                         <h2 className="text-xl font-semibold text-neutral-100">
-                            Finalizing Your Assessment
+                            Grading Your Assessment
                         </h2>
-                        <p className="text-sm text-neutral-500 mt-1">Saving your score and preparing results…</p>
+                        <p className="text-sm text-neutral-500 mt-1">
+                            Comparing your answers against the secured MCQ key — this only takes a moment.
+                        </p>
                     </div>
                 </motion.div>
             </div>
@@ -258,10 +300,10 @@ export default function MCQTestPage({
                 >
                     <div
                         className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center border ${autoFailed
-                                ? "bg-red-500/10 border-red-500/30"
-                                : passed
-                                    ? "bg-emerald-500/10 border-emerald-500/30"
-                                    : "bg-amber-500/10 border-amber-500/30"
+                            ? "bg-red-500/10 border-red-500/30"
+                            : passed
+                                ? "bg-emerald-500/10 border-emerald-500/30"
+                                : "bg-amber-500/10 border-amber-500/30"
                             }`}
                     >
                         {autoFailed ? (
@@ -300,8 +342,8 @@ export default function MCQTestPage({
                         </div>
                         <div
                             className={`p-4 rounded-xl border ${violations > 0
-                                    ? "bg-red-500/5 border-red-500/20"
-                                    : "bg-neutral-800/40 border-neutral-700/40"
+                                ? "bg-red-500/5 border-red-500/20"
+                                : "bg-neutral-800/40 border-neutral-700/40"
                                 }`}
                         >
                             <p className={`text-2xl font-bold ${violations > 0 ? "text-red-400" : "text-neutral-300"}`}>
@@ -318,8 +360,8 @@ export default function MCQTestPage({
                                 <div
                                     key={idx}
                                     className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm ${isCorrect
-                                            ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-300"
-                                            : "bg-red-500/5 border-red-500/20 text-red-300"
+                                        ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-300"
+                                        : "bg-red-500/5 border-red-500/20 text-red-300"
                                         }`}
                                 >
                                     {isCorrect ? (
@@ -421,14 +463,14 @@ export default function MCQTestPage({
                                                 whileTap={{ scale: 0.99 }}
                                                 onClick={() => selectAnswer(option)}
                                                 className={`w-full text-left px-5 py-4 rounded-xl text-sm transition-all border ${selected
-                                                        ? "bg-indigo-500/15 border-indigo-500/40 text-indigo-200 shadow-[0_0_15px_rgba(99,102,241,0.1)]"
-                                                        : "bg-neutral-800/30 border-neutral-800/50 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 hover:bg-neutral-800/50"
+                                                    ? "bg-indigo-500/15 border-indigo-500/40 text-indigo-200 shadow-[0_0_15px_rgba(99,102,241,0.1)]"
+                                                    : "bg-neutral-800/30 border-neutral-800/50 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 hover:bg-neutral-800/50"
                                                     }`}
                                             >
                                                 <span
                                                     className={`inline-flex items-center justify-center w-7 h-7 rounded-lg mr-4 text-xs font-bold ${selected
-                                                            ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                                                            : "bg-neutral-800 text-neutral-500 border border-neutral-700/50"
+                                                        ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                                                        : "bg-neutral-800 text-neutral-500 border border-neutral-700/50"
                                                         }`}
                                                 >
                                                     {String.fromCharCode(65 + optionIndex)}
@@ -460,10 +502,10 @@ export default function MCQTestPage({
                                     key={idx}
                                     onClick={() => setCurrentIndex(idx)}
                                     className={`w-3 h-3 rounded-full border transition-all ${idx === currentIndex
-                                            ? "bg-indigo-500 border-indigo-400 scale-125 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
-                                            : selectedAnswers[idx]
-                                                ? "bg-emerald-500/60 border-emerald-400/40"
-                                                : "bg-neutral-800 border-neutral-700"
+                                        ? "bg-indigo-500 border-indigo-400 scale-125 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+                                        : selectedAnswers[idx]
+                                            ? "bg-emerald-500/60 border-emerald-400/40"
+                                            : "bg-neutral-800 border-neutral-700"
                                         }`}
                                 />
                             ))}
@@ -484,11 +526,11 @@ export default function MCQTestPage({
                                 whileHover={{ scale: 1.03 }}
                                 whileTap={{ scale: 0.97 }}
                                 onClick={() => handleSubmit(violations)}
-                                disabled={answeredCount < totalQuestions}
+                                disabled={isSubmitting || answeredCount < totalQuestions}
                                 className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold tracking-wider transition-all hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Send className="w-4 h-4" />
-                                Submit Test
+                                Submit Assessment
                             </motion.button>
                         )}
                     </div>
