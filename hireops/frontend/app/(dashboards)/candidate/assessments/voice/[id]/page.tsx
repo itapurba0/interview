@@ -211,7 +211,6 @@ export default function VoiceInterviewRoom() {
         if (hasRequestedTokenRef.current) {
             return;
         }
-        hasRequestedTokenRef.current = true;
 
         let isActive = true;
         setIsFetching(true);
@@ -236,17 +235,20 @@ export default function VoiceInterviewRoom() {
                     const message = (await response.text()) || "Failed to acquire a token.";
                     throw new Error(message);
                 }
-
+                console.log("LiveKit token response received:", response);
                 const payload = await response.json();
+                console.log("isActive:", isActive)
                 if (!isActive) {
+                    console.log("Component unmounted before token could be set. Discarding token.");
                     return;
                 }
-
+                console.log("LiveKit token payload:", payload);
                 if (!payload.token) {
                     throw new Error("Invalid token response from the server.");
                 }
-
+                console.log("LiveKit token acquired successfully.");
                 setToken(payload.token);
+                hasRequestedTokenRef.current = true;
                 addStatus("Token acquired. Connecting to HireOps voice room...");
             } catch (error) {
                 const message =

@@ -428,6 +428,7 @@ async def evaluate_interview(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
+    # ... your existing code ...
     technical_score = scorecard.get("technical_score")
     if technical_score is not None:
         try:
@@ -435,10 +436,17 @@ async def evaluate_interview(
         except (TypeError, ValueError):
             application.voice_score = None
 
+    # Dump the JSON into the application record
     application.ai_feedback = json.dumps(scorecard, ensure_ascii=False)
     application.status = ApplicationStatus.INTERVIEW_EVALUATED
 
-    await db.commit()
+    # 🚨 SAFELY COMMIT TO THE DATABASE 🚨
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback() # Undo the broken transaction to prevent database locking
+        # Raise a proper 500 error that the frontend can actually read!
+        raise HTTPException(status_code=500, detail=f"Database save failed: {str(e)}")
 
     return {"scorecard": scorecard}
 
