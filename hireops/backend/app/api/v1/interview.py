@@ -3,11 +3,14 @@ import json
 import logging
 import os
 import tempfile
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from jose import jwt
+from jose.exceptions import JWTError
+from livekit import api
+from livekit.protocol.agent_dispatch import CreateAgentDispatchRequest
 from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +18,6 @@ from sqlalchemy.orm import joinedload
 
 from app.db import get_db
 from app.models import Application, ApplicationStatus, User
-from jose import jwt
-from jose.exceptions import JWTError
-from livekit import api
-from livekit.protocol.agent_dispatch import CreateAgentDispatchRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -88,14 +87,8 @@ def _create_livekit_token(
     metadata: Optional[str] = None,
     ttl: int = 3600,
 ) -> str:
-    """
-    Generates a secure JWT token using the official LiveKit SDK.
-    Handles correct camelCase nesting and clock skew mitigation automatically.
-    """
-    # Create the specific permissions for this candidate
     grant = api.VideoGrants(room_join=True, room=room)
 
-    # Build the token
     access_token = (
         api.AccessToken(api_key, api_secret)
         .with_identity(identity)
@@ -108,7 +101,6 @@ def _create_livekit_token(
     if metadata:
         access_token.with_metadata(metadata)
 
-    # The to_jwt() method automatically handles 'nbf' and 'exp' claims securely
     token = access_token.to_jwt()
     logger.debug(
         "LiveKit token created for identity %s in room %s using official SDK",
@@ -145,8 +137,6 @@ async def websocket_endpoint(
     application_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Voice interview WebSocket that streams audio through Whisper/Chat+TTS."""
-
     await websocket.accept()
     application = None
     client = _require_openrouter_client()
@@ -379,12 +369,6 @@ async def livekit_token(
         metadata=metadata_string,
         room=room_name,
     )
-    try:
-
-    
-        logger.info("✅ Explicitly dispatched 'hireops-recruiter' to room: %s", room_name)
-    except Exception as e:
-        logger.warning("⚠️ Agent dispatch signal failed (it may already be running): %s", e)
 
     try:
         decoded_payload = jwt.decode(token, LIVEKIT_API_SECRET, algorithms=["HS256"])

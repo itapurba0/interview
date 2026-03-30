@@ -32,6 +32,7 @@ const LiveKitScene = () => {
 
 export default function VoiceInterviewRoom() {
     const { id } = useParams() ?? {};
+    const applicationId = Array.isArray(id) ? id[0] : id;
 
     const [token, setToken] = useState("");
     const [statusLog, setStatusLog] = useState<string[]>([]);
@@ -39,6 +40,8 @@ export default function VoiceInterviewRoom() {
     const [tokenError, setTokenError] = useState("");
     const hasRequestedTokenRef = useRef(false);
     const hasDispatchedAgentRef = useRef(false);
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "";
 
     const addStatus = useCallback((message: string) => {
         setStatusLog((previous) => {
@@ -59,29 +62,50 @@ export default function VoiceInterviewRoom() {
         addStatus("Requesting LiveKit interview token...");
 
         const fetchToken = async () => {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
             try {
-                if (!id) {
+                if (!applicationId) {
                     throw new Error("Missing application identifier for LiveKit token.");
                 }
-                const response = await fetch(`/api/v1/interview/token?application_id=${id}`);
+
+                if (!livekitUrl) {
+                    throw new Error("Missing NEXT_PUBLIC_LIVEKIT_URL.");
+                }
+
+                const response = await fetch(
+                    `${apiBaseUrl}/api/v1/interview/token?application_id=${applicationId}`,
+                    { signal: controller.signal }
+                );
+
                 if (!response.ok) {
                     const message = (await response.text()) || "Failed to acquire a token.";
                     throw new Error(message);
                 }
+
                 const payload = await response.json();
                 if (!isActive) {
                     return;
                 }
+
                 if (!payload.token) {
                     throw new Error("Invalid token response from the server.");
                 }
+
                 setToken(payload.token);
                 addStatus("Token acquired. Connecting to HireOps voice room...");
             } catch (error) {
-                const message = error instanceof Error ? error.message : "Unable to fetch LiveKit token.";
+                const message =
+                    error instanceof DOMException && error.name === "AbortError"
+                        ? "Interview service timed out. Please try again."
+                        : error instanceof Error
+                          ? error.message
+                          : "Unable to fetch LiveKit token.";
                 setTokenError(message);
                 addStatus(`Token fetch failed: ${message}`);
             } finally {
+                window.clearTimeout(timeoutId);
                 if (isActive) {
                     setIsFetching(false);
                 }
@@ -92,7 +116,7 @@ export default function VoiceInterviewRoom() {
         return () => {
             isActive = false;
         };
-    }, [id, addStatus]);
+    }, [applicationId, addStatus, apiBaseUrl, livekitUrl]);
 
     const handleEndInterview = useCallback(() => {
         // TODO: route to the post-interview destination after finalizing the flow.
@@ -103,7 +127,7 @@ export default function VoiceInterviewRoom() {
     }, []);
 
     const handleRoomConnected = useCallback(async () => {
-        if (!id || hasDispatchedAgentRef.current) {
+        if (!applicationId || hasDispatchedAgentRef.current) {
             return;
         }
 
@@ -111,7 +135,7 @@ export default function VoiceInterviewRoom() {
         addStatus("LiveKit room connected. Dispatching recruiter agent...");
 
         try {
-            const response = await fetch(`/api/v1/interview/dispatch?application_id=${id}`, {
+            const response = await fetch(`${apiBaseUrl}/api/v1/interview/dispatch?application_id=${applicationId}`, {
                 method: "POST",
             });
 
@@ -130,9 +154,8 @@ export default function VoiceInterviewRoom() {
             const message = error instanceof Error ? error.message : "Failed to dispatch recruiter agent.";
             addStatus(`Agent dispatch failed: ${message}`);
         }
-    }, [id, addStatus]);
+    }, [applicationId, addStatus, apiBaseUrl]);
 
-    const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? "";
     const canConnect = Boolean(token && livekitUrl);
 
     return (

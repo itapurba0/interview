@@ -14,6 +14,7 @@ from local_audio import LocalSTT, LocalTTS
 
 logger = logging.getLogger(__name__)
 DEFAULT_OPENROUTER_LLM_MODEL = os.getenv("OPENROUTER_LLM_MODEL", "openai/gpt-4o-mini")
+DEFAULT_WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "tiny.en")
 
 def prewarm(proc: JobProcess):
     """
@@ -23,8 +24,12 @@ def prewarm(proc: JobProcess):
     logger.info("Prewarming Silero VAD...")
     proc.userdata["vad"] = silero.VAD.load()
 
-    logger.info("Prewarming Faster-Whisper STT (base.en)...")
-    proc.userdata["whisper_model"] = WhisperModel("base.en", device="cpu", compute_type="int8")
+    logger.info("Prewarming Faster-Whisper STT (%s)...", DEFAULT_WHISPER_MODEL_NAME)
+    proc.userdata["whisper_model"] = WhisperModel(
+        DEFAULT_WHISPER_MODEL_NAME,
+        device="cpu",
+        compute_type="int8",
+    )
     logger.info("All models prewarmed and ready.")
 
 async def request_fnc(req: JobRequest) -> None:
@@ -118,5 +123,7 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             request_fnc=request_fnc,
+            initialize_process_timeout=60.0,
+            num_idle_processes=1,
         )
     )
