@@ -8,18 +8,22 @@ import {
     VoiceAssistantControlBar,
     BarVisualizer,
     useVoiceAssistant,
+    TrackToggle,
+    DisconnectButton,
 } from "@livekit/components-react";
+import { Track } from "livekit-client";
 import "@livekit/components-styles";
+import { useRouter } from "next/navigation";
 
 import { ProctoringWrapper } from "@/components/assessment/ProctoringWrapper";
 
 const LiveKitScene = () => {
-    const { assistantState, audioTrack } = useVoiceAssistant();
+    const { state, audioTrack } = useVoiceAssistant();
 
     return (
         <div className="flex flex-col items-center gap-6 w-full">
             <BarVisualizer
-                state={assistantState}
+                state={state}
                 barCount={7}
                 trackRef={audioTrack}
                 className="h-48 w-full rounded-3xl bg-neutral-900/70"
@@ -31,6 +35,7 @@ const LiveKitScene = () => {
 };
 
 export default function VoiceInterviewRoom() {
+    const router = useRouter();
     const { id } = useParams() ?? {};
 
     const [token, setToken] = useState("");
@@ -151,9 +156,16 @@ export default function VoiceInterviewRoom() {
                                 audio
                                 video={false}
                                 onConnected={handleRoomConnected}
+                                onDisconnected={() => router.push("/candidate/congratulations")}
                             >
                                 <div className="flex flex-col gap-6 p-6 rounded-3xl bg-black/60 border border-white/10 shadow-[0_25px_60px_rgba(15,118,255,0.35)]">
                                     <LiveKitScene />
+                                    <div className="flex justify-center gap-4">
+                                        <TrackToggle
+                                            source={Track.Source.Microphone}
+                                            className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 transition-all border border-white/10"
+                                        />
+                                    </div>
                                     <p className="text-center text-sm text-neutral-400">
                                         LiveKit handles the voice stream, audio playback, and the AI recruiter controls for you.
                                     </p>
@@ -193,13 +205,26 @@ export default function VoiceInterviewRoom() {
                     </div>
 
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <button
-                            type="button"
-                            onClick={handleEndInterview}
-                            className="w-full md:w-auto px-6 py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm tracking-widest transition hover:bg-red-400 shadow-[0_10px_40px_rgba(239,68,68,0.4)]"
-                        >
-                            End Interview
-                        </button>
+                        {canConnect ? (
+                            <LiveKitRoom
+                                serverUrl={livekitUrl}
+                                token={token}
+                            >
+                                <DisconnectButton
+                                    className="w-full md:w-auto px-6 py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm tracking-widest transition hover:bg-red-400 shadow-[0_10px_40px_rgba(239,68,68,0.4)]"
+                                >
+                                    End Interview
+                                </DisconnectButton>
+                            </LiveKitRoom>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleEndInterview}
+                                className="w-full md:w-auto px-6 py-3 rounded-2xl bg-red-500 text-white font-semibold text-sm tracking-widest transition hover:bg-red-400 shadow-[0_10px_40px_rgba(239,68,68,0.4)]"
+                            >
+                                End Interview
+                            </button>
+                        )}
                         <p className="text-xs text-neutral-500 max-w-xl">
                             Ending the session closes the room and moves you to the post-interview page.
                         </p>
