@@ -62,6 +62,7 @@ class HRJobOut(BaseModel):
     is_active: bool
     applicant_count: int
     interviews_pending: int
+    shortlisted_count: int
     date_posted: str # Mapped from created_at in the route
 
 # ---------------------------------------------------------------------------
@@ -114,7 +115,8 @@ async def list_jobs_hr(
         select(
             Job,
             func.count(Application.id).label("applicant_count"),
-            func.count(case((Application.status == ApplicationStatus.VOICE_PENDING, 1))).label("interviews_pending")
+            func.sum(case((Application.status == ApplicationStatus.VOICE_PENDING.value, 1), else_=0)).label("interviews_pending"),
+            func.sum(case((Application.status == ApplicationStatus.SHORTLISTED.value, 1), else_=0)).label("shortlisted_count")
         )
         .outerjoin(Application, Job.id == Application.job_id)
         .where(Job.company_id == company_id)
@@ -127,16 +129,22 @@ async def list_jobs_hr(
     hr_jobs = []
     for row in rows:
         job_obj = row.Job
-        hr_jobs.append({
+        applicant_count = row.applicant_count or 0
+        shortlisted_count = row.shortlisted_count or 0
+        interviews_pending = row.interviews_pending or 0
+        
+        job_data = {
             "id": job_obj.id,
             "title": job_obj.title,
             "description": job_obj.description,
             "skills": job_obj.skills or [],
             "is_active": job_obj.is_active,
-            "applicant_count": row.applicant_count,
-            "interviews_pending": row.interviews_pending,
+            "applicant_count": applicant_count,
+            "interviews_pending": interviews_pending,
+            "shortlisted_count": shortlisted_count,
             "date_posted": job_obj.created_at.strftime("%Y-%m-%d") if getattr(job_obj, "created_at", None) else "2024-03-27"
-        })
+        }
+        hr_jobs.append(job_data)
         
     return hr_jobs
 
@@ -150,6 +158,25 @@ async def get_job_by_id(job_id: int, db: AsyncSession = Depends(get_db)):
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job Listing not found")
+    return job
+
+
+@router.put("/jobs/{job_id}/close", response_model=JobOut)
+async def close_job(
+    job_id: int,
+    company_id: int = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Close a job (mark as inactive) to stop it from displaying for candidates."""
+    result = await db.execute(
+        select(Job).where(Job.id == job_id, Job.company_id == company_id).options(joinedload(Job.company))
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job Listing not found")
+    
+    job.is_active = False
+    await db.commit()
     return job
 
 

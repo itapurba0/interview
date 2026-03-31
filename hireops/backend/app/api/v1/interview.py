@@ -41,7 +41,7 @@ SYSTEM_PROMPT = (
 
 
 class InterviewEvaluationRequest(BaseModel):
-    transcript: str
+    transcript: Optional[str] = None
 
 
 class TranscriptEvaluationResponse(BaseModel):
@@ -338,29 +338,45 @@ async def websocket_endpoint(
 @router.post("/{application_id}/evaluate", response_model=TranscriptEvaluationResponse)
 async def evaluate_interview(
     application_id: int,
-    payload: InterviewEvaluationRequest,
+    payload: InterviewEvaluationRequest = None,
     db: AsyncSession = Depends(get_db),
 ):
-    transcript = (payload.transcript or "").strip()
-    if not transcript:
-        raise HTTPException(status_code=400, detail="Transcript is required for evaluation.")
-
+    from app.models import User, Candidate
+    
     result = await db.execute(
         select(Application)
         .where(Application.id == application_id)
-        .options(joinedload(Application.job))
+        .options(
+            joinedload(Application.job),
+            joinedload(Application.candidate).joinedload(User.candidate_profile)
+        )
     )
     application = result.scalar_one_or_none()
 
     if not application:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    # Extract resume from candidate profile
+    candidate_user = application.candidate
+    if not candidate_user or not candidate_user.candidate_profile:
+        raise HTTPException(status_code=400, detail="Candidate profile not found.")
+    
+    candidate = candidate_user.candidate_profile
+    if not candidate.resume_text:
+        raise HTTPException(status_code=400, detail="Candidate resume not found. Please upload a resume to proceed with evaluation.")
+
+    # Extract job information
     job = application.job
     job_title = job.title if job else "General Technical Role"
     job_description = job.description if job and job.description else job_title
 
     try:
-        evaluation = await generate_interview_scorecard(transcript, job_title, job_description)
+        # Evaluate using resume + job description instead of transcript
+        evaluation = await generate_interview_scorecard(
+            candidate.resume_text,
+            job_title,
+            job_description
+        )
     except Exception as exc:
         logger.exception("Interview evaluation failed for %s: %s", application_id, exc)
         raise HTTPException(status_code=503, detail=str(exc))
@@ -385,6 +401,66 @@ async def evaluate_interview(
         raise HTTPException(status_code=500, detail=f"Failed to save evaluation: {exc}")
 
     return TranscriptEvaluationResponse(status="evaluated", evaluation=evaluation)
+
+
+@router.post("/{application_id}/shortlist")
+async def shortlist_candidate(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Application).where(Application.id == application_id))
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if application.status != ApplicationStatus.INTERVIEW_EVALUATED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot shortlist. Application status is {application.status}, expected INTERVIEW_EVALUATED."
+        )
+
+    application.status = ApplicationStatus.SHORTLISTED
+
+    try:
+        await db.commit()
+        await db.refresh(application)
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Failed to shortlist candidate for %s", application_id)
+        raise HTTPException(status_code=500, detail=f"Failed to shortlist: {exc}")
+
+    return {"status": "shortlisted", "application_status": application.status}
+
+
+@router.post("/{application_id}/reject")
+async def reject_candidate(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Application).where(Application.id == application_id))
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if application.status != ApplicationStatus.INTERVIEW_EVALUATED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reject. Application status is {application.status}, expected INTERVIEW_EVALUATED."
+        )
+
+    application.status = ApplicationStatus.REJECTED
+
+    try:
+        await db.commit()
+        await db.refresh(application)
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Failed to reject candidate for %s", application_id)
+        raise HTTPException(status_code=500, detail=f"Failed to reject: {exc}")
+
+    return {"status": "rejected", "application_status": application.status}
 
 
 @router.post("/{application_id}/complete")

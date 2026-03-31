@@ -52,9 +52,11 @@ interface VoiceEvaluation {
 export function CandidateMiniCard({ app, columnKey }: CandidateMiniCardProps) {
   const router = useRouter();
   const [scheduling, setScheduling] = useState(false);
-  const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [showEvaluationDetails, setShowEvaluationDetails] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [isShortlisting, setIsShortlisting] = useState(false);
+  const [isRejectingAfterEval, setIsRejectingAfterEval] = useState(false);
 
   const candidateName = app.candidate?.full_name || "Unknown Candidate";
   const candidateEmail = app.candidate?.email || "No email";
@@ -65,16 +67,6 @@ export function CandidateMiniCard({ app, columnKey }: CandidateMiniCardProps) {
   const PASSING_THRESHOLD = 50;
   const mcqPassed = typeof app.mcq_score === 'number' && app.mcq_score >= PASSING_THRESHOLD;
   const codingPassed = typeof app.coding_score === 'number' && app.coding_score >= PASSING_THRESHOLD;
-  const bothTestsTaken = typeof app.mcq_score === 'number' && typeof app.coding_score === 'number';
-  const bothTestsPassed = mcqPassed && codingPassed;
-  const eitherTestFailed = bothTestsTaken && !bothTestsPassed;
-
-  // Determine if candidate needs review (both tests taken, not yet advanced/rejected)
-  const isNeedsReview =
-    bothTestsTaken &&
-    app.status !== "VOICE_PENDING" &&
-    app.status !== "SHORTLISTED" &&
-    app.status !== "REJECTED";
 
   const handleSchedule = async () => {
     setScheduling(true);
@@ -82,29 +74,6 @@ export function CandidateMiniCard({ app, columnKey }: CandidateMiniCardProps) {
     await new Promise((r) => setTimeout(r, 1000));
     alert(`📅 1:1 Interview scheduled with ${candidateName} for "${jobTitle}"`);
     setScheduling(false);
-  };
-
-  const handleApproveForVoice = async () => {
-    if (!bothTestsPassed) {
-      alert("❌ Cannot approve: One or both tests did not meet the passing threshold.");
-      return;
-    }
-
-    setIsApproving(true);
-    try {
-      await fetchApi(`/api/v1/applications/${app.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "VOICE_PENDING" }),
-      });
-
-      alert(`✅ ${candidateName} approved for voice interview!`);
-      router.refresh();
-    } catch (error) {
-      console.error("Error approving candidate:", error);
-      alert(`❌ Error: ${error instanceof Error ? error.message : "Failed to approve candidate"}`);
-    } finally {
-      setIsApproving(false);
-    }
   };
 
   const handleReject = async () => {
@@ -164,6 +133,58 @@ export function CandidateMiniCard({ app, columnKey }: CandidateMiniCardProps) {
     : [];
 
   const evaluationReady = Boolean(evaluationData);
+  const isInterviewEvaluated = app.status === "INTERVIEW_EVALUATED";
+
+  const handleForceEvaluate = async () => {
+    setIsEvaluating(true);
+    try {
+      await fetchApi(`/api/v1/interview/${app.id}/evaluate`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      alert(`🎯 Evaluation queued for ${candidateName}.`);
+      router.refresh();
+    } catch (error) {
+      console.error("Error triggering evaluation:", error);
+      alert(`❌ Evaluation failed: ${error instanceof Error ? error.message : "unknown"}`);
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
+  const handleShortlist = async () => {
+    setIsShortlisting(true);
+    try {
+      await fetchApi(`/api/v1/interview/${app.id}/shortlist`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      alert(`✓ ${candidateName} has been shortlisted!`);
+      router.refresh();
+    } catch (error) {
+      console.error("Error shortlisting candidate:", error);
+      alert(`❌ Shortlist failed: ${error instanceof Error ? error.message : "unknown"}`);
+    } finally {
+      setIsShortlisting(false);
+    }
+  };
+
+  const handleRejectAfterEval = async () => {
+    setIsRejectingAfterEval(true);
+    try {
+      await fetchApi(`/api/v1/interview/${app.id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      alert(`✗ ${candidateName} has been rejected.`);
+      router.refresh();
+    } catch (error) {
+      console.error("Error rejecting candidate:", error);
+      alert(`❌ Reject failed: ${error instanceof Error ? error.message : "unknown"}`);
+    } finally {
+      setIsRejectingAfterEval(false);
+    }
+  };
 
   return (
     <GlassCard
@@ -237,170 +258,134 @@ export function CandidateMiniCard({ app, columnKey }: CandidateMiniCardProps) {
       )}
 
       {/* Evaluation toggle */}
-      <div className="mt-3 space-y-2">
-        <motion.button
-          type="button"
-          disabled={!evaluationReady}
-          onClick={() => evaluationReady && setShowEvaluationDetails((prev) => !prev)}
-          className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold tracking-wide transition ${evaluationReady
-            ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:border-indigo-400/50"
-            : "border-neutral-800/50 bg-neutral-900/60 text-neutral-500 cursor-not-allowed"
-            }`}
-        >
-          <FileText className="w-3 h-3" />
-          {evaluationReady
-            ? showEvaluationDetails
-              ? "Hide evaluation"
-              : "View evaluation"
-            : "Evaluation pending"
-          }
-        </motion.button>
-
-        {showEvaluationDetails && evaluationReady && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-3 bg-neutral-900/60 border border-neutral-800/60 rounded-2xl p-3 text-[11px] text-neutral-200"
-          >
-            {(evaluationData?.technical_score ?? evaluationData?.communication_score) !== undefined && (
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-neutral-500">
-                <span>Overall Score</span>
-                {evaluationData?.technical_score != null ? (
-                  <ScoreBadge score={Math.round(evaluationData.technical_score)} className="text-[10px]" />
-                ) : (
-                  <span className="text-neutral-400">—</span>
-                )}
-              </div>
-            )}
-
-            {evaluationData?.communication_score != null && (
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-neutral-500">Communication</span>
-                <span className="text-sm font-semibold text-emerald-400">
-                  {Math.round(evaluationData.communication_score)}%
-                </span>
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Summary</p>
-              <p className="text-sm text-neutral-200 leading-tight">
-                {evaluationData?.summary ?? "No summary available yet."}
-              </p>
-            </div>
-
-            {strengths.length > 0 && (
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Strengths</p>
-                <ul className="mt-1 list-disc list-inside space-y-0.5 text-[11px] text-neutral-300">
-                  {strengths.map((item, index) => (
-                    <li key={`strength-${index}-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {weaknesses.length > 0 && (
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Opportunities</p>
-                <ul className="mt-1 list-disc list-inside space-y-0.5 text-[11px] text-neutral-300">
-                  {weaknesses.map((item, index) => (
-                    <li key={`weakness-${index}-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {evaluationData?.hire_recommendation && (
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-neutral-500">
-                <span>Recommendation</span>
-                <span className="text-sm font-semibold text-amber-300">
-                  {evaluationData.hire_recommendation}
-                </span>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </div>
-
-      {/* Action Buttons - Needs Review: Show warning and approve/reject options */}
-      {columnKey === "NEEDS_REVIEW" && bothTestsTaken && (
-        <div className="space-y-2 mt-3">
-          {/* Warning Badge */}
-          <div className="px-3 py-2 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="text-[10px] text-amber-400 font-semibold">Proctoring Violations Detected</span>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2">
+      {isInterviewEvaluated && (
+        <div className="mt-3 space-y-2">
+          {evaluationReady && (
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleApproveForVoice}
-              disabled={isApproving}
-              className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-600/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold tracking-wider rounded-lg hover:bg-emerald-600/25 disabled:opacity-50 transition-all"
+              type="button"
+              onClick={() => setShowEvaluationDetails((prev) => !prev)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-200 font-semibold tracking-wide hover:border-indigo-400/50 transition"
             >
-              {isApproving ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <ThumbsUp className="w-3 h-3" />
-              )}
-              {isApproving ? "Approving…" : "Approve"}
+              <FileText className="w-3 h-3" />
+              {showEvaluationDetails ? "Hide evaluation" : "View evaluation"}
             </motion.button>
+          )}
 
+          {!evaluationReady && (
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleReject}
-              disabled={isRejecting}
-              className="flex-1 py-2 flex items-center justify-center gap-2 bg-red-600/15 border border-red-500/30 text-red-400 text-[10px] font-bold tracking-wider rounded-lg hover:bg-red-600/25 disabled:opacity-50 transition-all"
+              type="button"
+              disabled={isEvaluating}
+              onClick={handleForceEvaluate}
+              className={`w-full flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-semibold tracking-wide transition ${isEvaluating
+                ? "border-neutral-700 bg-neutral-900/60 text-neutral-500 cursor-wait"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-200 hover:border-amber-400/50"
+                }`}
             >
-              {isRejecting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Ban className="w-3 h-3" />
-              )}
-              {isRejecting ? "Rejecting…" : "Reject"}
+              <Loader2 className="w-3 h-3" />
+              {isEvaluating ? "Evaluating..." : "Force evaluation"}
             </motion.button>
-          </div>
+          )}
+
+          {showEvaluationDetails && evaluationReady && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-3 bg-neutral-900/60 border border-neutral-800/60 rounded-2xl p-3 text-[11px] text-neutral-200"
+            >
+              {(evaluationData?.technical_score ?? evaluationData?.communication_score) !== undefined && (
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-neutral-500">
+                  <span>Overall Score</span>
+                  {evaluationData?.technical_score != null ? (
+                    <ScoreBadge score={Math.round(evaluationData.technical_score)} className="text-[10px]" />
+                  ) : (
+                    <span className="text-neutral-400">—</span>
+                  )}
+                </div>
+              )}
+
+              {evaluationData?.communication_score != null && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-500">Communication</span>
+                  <span className="text-sm font-semibold text-emerald-400">
+                    {Math.round(evaluationData.communication_score)}%
+                  </span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Summary</p>
+                <p className="text-sm text-neutral-200 leading-tight">
+                  {evaluationData?.summary ?? "No summary available yet."}
+                </p>
+              </div>
+
+              {strengths.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Strengths</p>
+                  <ul className="mt-1 list-disc list-inside space-y-0.5 text-[11px] text-neutral-300">
+                    {strengths.map((item, index) => (
+                      <li key={`strength-${index}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {weaknesses.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500">Opportunities</p>
+                  <ul className="mt-1 list-disc list-inside space-y-0.5 text-[11px] text-neutral-300">
+                    {weaknesses.map((item, index) => (
+                      <li key={`weakness-${index}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {evaluationData?.hire_recommendation && (
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-neutral-500">
+                  <span>Recommendation</span>
+                  <span className="text-sm font-semibold text-amber-300">
+                    {evaluationData.hire_recommendation}
+                  </span>
+                </div>
+              )}
+            </motion.div>
+          )}
         </div>
       )}
 
-      {/* Action Buttons - Needs Review (Test Results): Approve if pass, Reject if fail */}
-      {columnKey !== "NEEDS_REVIEW" && isNeedsReview && (
+      {/* Shortlist/Reject Buttons - After Evaluation */}
+      {isInterviewEvaluated && evaluationReady && (
         <div className="flex gap-2 mt-3">
-          {bothTestsPassed ? (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleApproveForVoice}
-              disabled={isApproving}
-              className="flex-1 py-2 flex items-center justify-center gap-2 bg-cyan-600/15 border border-cyan-500/30 text-cyan-400 text-[11px] font-bold tracking-wider rounded-xl hover:bg-cyan-600/25 disabled:opacity-50 transition-all shadow-[0_0_12px_rgba(34,211,238,0.1)] hover:shadow-[0_0_16px_rgba(34,211,238,0.2)]"
-            >
-              {isApproving ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <ThumbsUp className="w-3 h-3" />
-              )}
-              {isApproving ? "Approving…" : "Approve for Voice"}
-            </motion.button>
-          ) : eitherTestFailed ? (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleReject}
-              disabled={isRejecting}
-              className="flex-1 py-2 flex items-center justify-center gap-2 bg-red-600/15 border border-red-500/30 text-red-400 text-[11px] font-bold tracking-wider rounded-xl hover:bg-red-600/25 disabled:opacity-50 transition-all shadow-[0_0_12px_rgba(239,68,68,0.1)] hover:shadow-[0_0_16px_rgba(239,68,68,0.2)]"
-            >
-              {isRejecting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Ban className="w-3 h-3" />
-              )}
-              {isRejecting ? "Rejecting…" : "Reject"}
-            </motion.button>
-          ) : null}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleShortlist}
+            disabled={isShortlisting}
+            className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-600/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider rounded-lg hover:bg-emerald-600/25 disabled:opacity-50 transition-all"
+          >
+            {isShortlisting ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <ThumbsUp className="w-3 h-3" />
+            )}
+            {isShortlisting ? "Shortlisting…" : "✓ Shortlist"}
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleRejectAfterEval}
+            disabled={isRejectingAfterEval}
+            className="flex-1 py-2 flex items-center justify-center gap-2 bg-red-600/15 border border-red-500/30 text-red-400 text-[11px] font-bold tracking-wider rounded-lg hover:bg-red-600/25 disabled:opacity-50 transition-all"
+          >
+            {isRejectingAfterEval ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Ban className="w-3 h-3" />
+            )}
+            {isRejectingAfterEval ? "Rejecting…" : "✗ Reject"}
+          </motion.button>
         </div>
       )}
 

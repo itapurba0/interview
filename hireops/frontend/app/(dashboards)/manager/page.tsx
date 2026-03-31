@@ -40,6 +40,7 @@ const widgetVariants: Variants = {
 interface JobPipelineEntry {
   title: string;
   applicant_count: number;
+  shortlisted_count: number;
   interviews_pending: number;
 }
 
@@ -104,8 +105,15 @@ export default function ManagerDashboard() {
     active && payload && payload.length ? (
       <div className="rounded-2xl bg-neutral-950/80 p-3 text-sm text-white shadow-lg">
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">{label}</p>
-        <p className="pt-1">Applications: {payload[0].value}</p>
-        <p className="text-xs text-emerald-300">
+        <p className="pt-1">
+          <span className="text-blue-300">● </span>
+          Total Applicants: {payload[0].value}
+        </p>
+        <p>
+          <span className="text-emerald-300">● </span>
+          Shortlisted: {payload[1]?.value ?? 0}
+        </p>
+        <p className="text-xs text-indigo-300 pt-1">
           {chartData.find((point) => point.title === label)?.interviews_pending ?? 0} voice pending
         </p>
       </div>
@@ -148,12 +156,12 @@ export default function ManagerDashboard() {
           <GlassCard className="rounded-[2.5rem] p-6 bg-neutral-900/40 border border-neutral-800/60">
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500 font-bold">Job-level context</p>
-              <span className="text-[10px] text-neutral-400">Explainability graph weighted by candidate volume</span>
+              <span className="text-[10px] text-neutral-400">Total applicants vs. Shortlisted candidates by job</span>
             </div>
             <p className="text-sm text-neutral-300 mb-6">
               {jobsLoading
                 ? "Loading pipeline breakdown..."
-                : `The graph is shaped by ${jobPipeline.length} job${jobPipeline.length === 1 ? "" : "s"} that together have ${totalApplications} applications and ${totalInterviewsPending} voice interviews pending.`
+                : `Visualization of ${jobPipeline.length} job${jobPipeline.length === 1 ? "" : "s"} showing blue bars for total applicants and green bars for shortlisted candidates.`
               }
             </p>
             <div className="h-[360px] w-full">
@@ -188,9 +196,14 @@ export default function ManagerDashboard() {
                       width={48}
                     />
                     <Tooltip content={renderTooltip} />
-                    <Bar dataKey="applicant_count" barSize={48} radius={[12, 12, 0, 0]}>
-                      {chartData.map((entry) => (
-                        <Cell key={entry.gradientId} fill={`url(#${entry.gradientId})`} />
+                    <Bar dataKey="applicant_count" fill="#60a5fa" barSize={32} radius={[8, 8, 0, 0]}>
+                      {chartData.map((_, idx) => (
+                        <Cell key={`app-${idx}`} fill="#60a5fa" />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="shortlisted_count" fill="#34d399" barSize={32} radius={[8, 8, 0, 0]}>
+                      {chartData.map((_, idx) => (
+                        <Cell key={`short-${idx}`} fill="#34d399" />
                       ))}
                     </Bar>
                   </BarChart>

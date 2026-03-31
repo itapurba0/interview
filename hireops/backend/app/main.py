@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 from sqlalchemy import text
 
 from app.db import engine, AsyncSessionLocal
-from app.models import Base, User, Company, UserRole, Candidate
+from app.models import Base, User, Company, UserRole, Candidate, Job, Application, ApplicationStatus
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -22,6 +22,7 @@ async def seed_db():
         # 2. Create Default Company
         company = Company(id=100, name="HireOps Inc.", description="Global AI Talent Orchestrator")
         session.add(company)
+        await session.flush()
         
         # 3. Create Default HR User (hr@hireops.com / password123)
         hr_user = User(
@@ -32,8 +33,71 @@ async def seed_db():
             company_id=100
         )
         session.add(hr_user)
+        await session.flush()
+        
+        # 4. Create sample candidates
+        candidates_data = [
+            {"name": "SK Akram Haq", "email": "akram@gmail.com", "resume": "Senior React Developer with 5+ years of experience...", "skills": ["React", "TypeScript", "Node.js"]},
+            {"name": "Jane Smith", "email": "jane@example.com", "resume": "Full-stack developer with Python and React...", "skills": ["React", "Python", "PostgreSQL"]},
+            {"name": "John Developer", "email": "john@example.com", "resume": "Frontend specialist experienced in React...", "skills": ["React", "CSS", "JavaScript"]},
+            {"name": "Alice Engineer", "email": "alice@example.com", "resume": "DevOps and backend engineer...", "skills": ["Node.js", "Docker", "Kubernetes"]},
+            {"name": "Bob Coder", "email": "bob@example.com", "resume": "Mobile and web developer...", "skills": ["React Native", "JavaScript"]},
+        ]
+        
+        candidate_users = []
+        for cand_data in candidates_data:
+            cand_user = User(
+                email=cand_data["email"],
+                hashed_password=pwd_context.hash("password123"),
+                full_name=cand_data["name"],
+                role=UserRole.CANDIDATE,
+                company_id=None  # Candidates don't belong to a company
+            )
+            session.add(cand_user)
+            await session.flush()
+            
+            cand_profile = Candidate(
+                user_id=cand_user.id,
+                resume_text=cand_data["resume"],
+                technical_skills=cand_data["skills"],
+                soft_skills=["Communication", "Teamwork"],
+                experience_years=5
+            )
+            session.add(cand_profile)
+            candidate_users.append(cand_user)
+        
+        await session.flush()
+        
+        # 5. Create sample job
+        job = Job(
+            id=1,
+            title="React Developer",
+            description="We are looking for a senior React developer with expertise in TypeScript and modern frontend architecture.",
+            skills=["React", "TypeScript", "Node.js"],
+            company_id=100
+        )
+        session.add(job)
+        await session.flush()
+        
+        # 6. Create sample applications
+        statuses = [ApplicationStatus.APPLIED, ApplicationStatus.TEST_PENDING, ApplicationStatus.VOICE_PENDING, ApplicationStatus.INTERVIEW_EVALUATED, ApplicationStatus.SHORTLISTED]
+        for idx, cand_user in enumerate(candidate_users):
+            app = Application(
+                candidate_id=cand_user.id,
+                job_id=job.id,
+                status=statuses[idx % len(statuses)],
+                match_score=80 + idx * 5,
+                mcq_score=85.0 if idx > 0 else None,
+                coding_score=90.0 if idx > 1 else None,
+                voice_score=88.0 if idx > 3 else None,
+            )
+            session.add(app)
+        
         await session.commit()
-        print("SEEDING COMPLETE: Created hr@hireops.com / password123")
+        print("✅ SEEDING COMPLETE: Created hr@hireops.com / password123")
+        print(f"✅ Created {len(candidate_users)} sample candidates")
+        print(f"✅ Created 1 React Developer job")
+        print(f"✅ Created {len(candidate_users)} applications")
 
 
 async def ensure_jobs_skills_column(conn):

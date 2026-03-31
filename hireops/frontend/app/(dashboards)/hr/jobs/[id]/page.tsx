@@ -21,11 +21,9 @@ import { fetchApi } from "@/lib/api";
 // Pipeline columns mirroring the ApplicationStatus enum
 const PIPELINE_COLUMNS = [
   { key: "APPLIED", label: "Applied", color: "neutral", icon: "📥" },
-  { key: "AI_SCREENING", label: "AI Screening", color: "amber", icon: "🤖" },
   { key: "TEST_PENDING", label: "Test Pending", color: "blue", icon: "📝" },
-  { key: "NEEDS_REVIEW", label: "Needs Review", color: "indigo", icon: "👀" },
   { key: "VOICE_PENDING", label: "Voice Pending", color: "violet", icon: "🎙️" },
-  { key: "INTERVIEW_EVALUATED", label: "Voice Evaluated", color: "emerald", icon: "🧠" },
+  { key: "INTERVIEW_EVALUATED", label: "Evaluation", color: "emerald", icon: "🧠" },
   { key: "SHORTLISTED", label: "Shortlisted", color: "emerald", icon: "⭐" },
 ] as const;
 
@@ -66,6 +64,7 @@ export default function JobPipelineDashboard({
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [closingJob, setClosingJob] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -76,6 +75,9 @@ export default function JobPipelineDashboard({
 
       // 2. Fetch applications for this job from the HR endpoint
       const data = await fetchApi<HRApplication[]>(`/api/v1/applications`);
+      console.log("✅ Fetched applications:", data);
+      console.log("📌 Current jobId:", jobId);
+      console.log("🔍 Filtered to job:", data.filter((a) => a.job_id === parseInt(jobId)));
       setApplications(data);
     } catch (err) {
       console.error("Failed to fetch job context:", err);
@@ -96,49 +98,55 @@ export default function JobPipelineDashboard({
     fetchData();
   };
 
-  const filteredApps = searchQuery.trim()
-    ? applications
-      .filter((a) => a.job_id === parseInt(jobId))
-      .filter((a) =>
-        a.candidate?.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : applications.filter((a) => a.job_id === parseInt(jobId));
+  const handleCloseJob = async () => {
+    if (!jobData) return;
+
+    try {
+      setClosingJob(true);
+      const updatedJob = await fetchApi<any>(`/api/v1/jobs/${jobId}/close`, {
+        method: "PUT",
+      });
+      setJobData(updatedJob);
+      alert("Job has been closed successfully. It will no longer appear for candidates.");
+    } catch (err) {
+      console.error("Failed to close job:", err);
+      alert("Failed to close the job. Please try again.");
+    } finally {
+      setClosingJob(false);
+    }
+  };
+
+  const filteredApps = applications.filter((a) => a.job_id === parseInt(jobId));
+
+  console.log("📋 Total applications from API:", applications.length);
+  console.log("📋 Filtered to job", jobId, ":", filteredApps.length);
+  console.log("📋 Applications data:", filteredApps);
 
   // Dynamic column sorting based on assessment status
   const getColumnApps = (key: string) => {
-    return filteredApps.filter((a) => {
+    const candidates = filteredApps.filter((a) => {
       switch (key) {
         case "APPLIED":
-          // Newly applied candidates or AI screening
-          return a.status === "APPLIED" || (a.status === "AI_SCREENING" && !a.mcq_score);
-
-        case "AI_SCREENING":
-          // AI screening passed with match score >= 75, ready for tests
-          return a.status === "AI_SCREENING" && a.match_score !== null && a.match_score >= 75;
+          return a.status === "APPLIED" || !a.status;
 
         case "TEST_PENDING":
-          // MCQ test pending or in progress (no scores yet)
-          return a.status === "TEST_PENDING" && (a.mcq_score === null || a.coding_score === null);
-
-        case "NEEDS_REVIEW":
-          // Both tests complete, awaiting HR approval/rejection
-          return a.status === "TEST_PENDING" && a.mcq_score !== null && a.coding_score !== null;
+          return a.status === "TEST_PENDING";
 
         case "VOICE_PENDING":
-          // MCQ passed, voice interview pending
-          return a.status === "VOICE_PENDING" && a.mcq_score !== null && a.coding_score !== null && a.voice_score === null;
+          return a.status === "VOICE_PENDING";
 
         case "INTERVIEW_EVALUATED":
           return a.status === "INTERVIEW_EVALUATED";
 
         case "SHORTLISTED":
-          // All assessments passed, ready for final interviews
-          return a.status === "SHORTLISTED" && a.mcq_score !== null && a.coding_score !== null && a.voice_score !== null;
+          return a.status === "SHORTLISTED";
 
         default:
           return false;
       }
     });
+    console.log(`📊 ${key}: ${candidates.length} candidates`);
+    return candidates;
   };
 
   const rejected = filteredApps.filter((a) => a.status === "REJECTED");
@@ -210,9 +218,30 @@ export default function JobPipelineDashboard({
               View Job Description
             </button>
 
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/40 text-neutral-300 text-xs font-bold tracking-wider rounded-xl transition-all">
-              <ExternalLink className="w-4 h-4" />
-              Live Job
+            <button
+              onClick={handleCloseJob}
+              disabled={closingJob || !jobData?.is_active}
+              className={`flex items-center gap-2 px-5 py-2.5 border rounded-xl text-xs font-bold tracking-wider transition-all ${!jobData?.is_active
+                  ? "bg-neutral-900/50 border-neutral-700/20 text-neutral-500 cursor-not-allowed"
+                  : "bg-red-900/20 hover:bg-red-900/30 border-red-700/40 text-red-300"
+                }`}
+            >
+              {closingJob ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Closing...
+                </>
+              ) : !jobData?.is_active ? (
+                <>
+                  <ExternalLink className="w-4 h-4" />
+                  Job Closed
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="w-4 h-4" />
+                  Close Job
+                </>
+              )}
             </button>
           </div>
         </motion.div>
