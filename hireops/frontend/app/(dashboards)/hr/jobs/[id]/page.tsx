@@ -25,6 +25,7 @@ const PIPELINE_COLUMNS = [
   { key: "TEST_PENDING", label: "Test Pending", color: "blue", icon: "📝" },
   { key: "NEEDS_REVIEW", label: "Needs Review", color: "indigo", icon: "👀" },
   { key: "VOICE_PENDING", label: "Voice Pending", color: "violet", icon: "🎙️" },
+  { key: "INTERVIEW_EVALUATED", label: "Voice Evaluated", color: "emerald", icon: "🧠" },
   { key: "SHORTLISTED", label: "Shortlisted", color: "emerald", icon: "⭐" },
 ] as const;
 
@@ -126,6 +127,9 @@ export default function JobPipelineDashboard({
         case "VOICE_PENDING":
           // MCQ passed, voice interview pending
           return a.status === "VOICE_PENDING" && a.mcq_score !== null && a.coding_score !== null && a.voice_score === null;
+
+        case "INTERVIEW_EVALUATED":
+          return a.status === "INTERVIEW_EVALUATED";
 
         case "SHORTLISTED":
           // All assessments passed, ready for final interviews

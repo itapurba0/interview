@@ -5,6 +5,7 @@ import { Users, ChevronRight, BarChart3, Search } from "lucide-react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ScoreBadge } from "@/components/ui/ScoreBadge";
+import { ExplainabilityRadarChart } from "@/components/manager/ExplainabilityRadarChart";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -28,10 +29,13 @@ const widgetVariants: Variants = {
 };
 
 // Mock data for the dashboard overview
-const RECENT_APPLICANTS = [
-  { id: 1, name: "Alex Candidate", email: "alex.candidate@example.com", job: "Senior AI Engineer", score: 92 },
-  { id: 2, name: "Jordan Smith", email: "jordan.s@example.com", job: "Backend Lead", score: 85 },
-  { id: 3, name: "Taylor Reed", email: "treed@example.com", job: "Fullstack Developer", score: 78 },
+const RADAR_DATA = [
+  { subject: "Communication", A: 86, fullMark: 100 },
+  { subject: "Problem Solving", A: 92, fullMark: 100 },
+  { subject: "Leadership", A: 78, fullMark: 100 },
+  { subject: "Domain Fit", A: 84, fullMark: 100 },
+  { subject: "Bias Risk", A: 64, fullMark: 100 },
+  { subject: "Engagement", A: 88, fullMark: 100 },
 ];
 
 export default function ManagerDashboard() {
@@ -61,60 +65,38 @@ export default function ManagerDashboard() {
            </GlassCard>
         </motion.div>
 
-        {/* Intelligence Table Placeholder */}
-        <motion.div variants={widgetVariants}>
-          <GlassCard className="rounded-[2.5rem] overflow-hidden">
-             <div className="px-10 py-8 border-b border-neutral-800/40 flex justify-between items-center">
-                <h3 className="text-xl text-neutral-100 font-light tracking-tight">Recent Decision Vectors</h3>
-                <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
-                   <input 
-                     type="text" 
-                     placeholder="Search intelligence cache..." 
-                     className="bg-neutral-950/60 border border-neutral-800 rounded-xl pl-10 pr-4 py-2 text-sm text-neutral-300 placeholder-neutral-700 focus:outline-none focus:border-indigo-500/40"
-                   />
-                </div>
-             </div>
-             
-             <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                   <thead>
-                      <tr className="border-b border-neutral-800/40 bg-neutral-900/20">
-                         <th className="px-10 py-5 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Candidate</th>
-                         <th className="px-10 py-5 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Position</th>
-                         <th className="px-10 py-5 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Match Strength</th>
-                         <th className="px-10 py-5 text-right pr-10"></th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-neutral-800/40">
-                      {RECENT_APPLICANTS.map((applicant) => (
-                        <tr key={applicant.id} className="group hover:bg-neutral-900/40 transition-colors">
-                           <td className="px-10 py-6">
-                              <p className="text-neutral-200 font-medium text-sm">{applicant.name}</p>
-                              <p className="text-neutral-500 text-xs">{applicant.email}</p>
-                           </td>
-                           <td className="px-10 py-6">
-                              <span className="px-3 py-1 bg-neutral-800/60 border border-neutral-700/40 rounded-lg text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                                {applicant.job}
-                              </span>
-                           </td>
-                           <td className="px-10 py-6">
-                              <ScoreBadge score={applicant.score} />
-                           </td>
-                           <td className="px-10 py-6 text-right">
-                              <Link 
-                                href={`/manager/application/${applicant.id}`}
-                                className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-500/20 transition-all group/btn"
-                              >
-                                Review Explainability
-                                <ChevronRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
-                              </Link>
-                           </td>
-                        </tr>
-                      ))}
-                   </tbody>
-                </table>
-             </div>
+        {/* Explainability Graph + Context */}
+        <motion.div variants={widgetVariants} className="grid grid-cols-1 lg:grid-cols-[1fr_0.65fr] gap-6">
+          <ExplainabilityRadarChart data={RADAR_DATA} />
+          <GlassCard className="rounded-[2.5rem] p-8 flex flex-col gap-6 bg-gradient-to-br from-neutral-900/60 to-neutral-950/80 border border-neutral-800/50 shadow-2xl">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-neutral-500 font-bold">Explainability Focus</p>
+              <h3 className="text-2xl text-neutral-100 font-light tracking-tight mt-2">Why the model scored this candidate</h3>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-neutral-300">Confidence in topology</p>
+                <span className="text-sm text-emerald-400 font-semibold">92%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-neutral-300">Diversity adjustment</p>
+                <span className="text-sm text-amber-300 font-semibold">+3.4 pts</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-neutral-300">Bias risk</p>
+                <span className="text-sm text-red-400 font-semibold">Moderate</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-neutral-300">Required vs observed gap</p>
+                <span className="text-sm text-indigo-300 font-semibold">2.8%</span>
+              </div>
+            </div>
+            <div className="px-4 py-3 bg-neutral-950/40 rounded-3xl border border-neutral-800/40 text-[11px] text-neutral-400">
+              The explainability overlay compares AI predictions to role-specific radars and surfaces why a candidate lands in the evaluated bucket. Use this as the starting point for manager-driven calibration before human interviews begin.
+            </div>
+            <button className="mt-auto px-5 py-2.5 bg-indigo-500/20 border border-indigo-500/30 text-indigo-200 text-sm font-semibold rounded-xl hover:bg-indigo-500/30 transition-all">
+              Export perspective
+            </button>
           </GlassCard>
         </motion.div>
 
