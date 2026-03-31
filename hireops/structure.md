@@ -42,5 +42,6 @@ hireops/
 ├── ARCHITECTURE.md                # System design & architecture
 ├── RISK_LIMITATION_SCOPE.md       # Analysis of risks, limitations, and roadmap
 ├── ALTERNATE_SOLUTIONS.md         # Technical alternatives for STT, TTS, and CV
+├── APPENDIX.md                   # Performance bounds and critical components
 └── docker-compose.yml             # Postgres, Redis, Celery, App services
 ```

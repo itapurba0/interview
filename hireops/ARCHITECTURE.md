@@ -234,4 +234,5 @@ flowchart TD
 For a detailed analysis of project risks, current architectural limitations, alternate solutions, and the strategic roadmap, please refer to the:
 - [RISK_LIMITATION_SCOPE.md](file:///e:/Downloads/Developments/interview/hireops/RISK_LIMITATION_SCOPE.md)
 - [ALTERNATE_SOLUTIONS.md](file:///e:/Downloads/Developments/interview/hireops/ALTERNATE_SOLUTIONS.md)
+- [APPENDIX.md](file:///e:/Downloads/Developments/interview/hireops/APPENDIX.md)
 
