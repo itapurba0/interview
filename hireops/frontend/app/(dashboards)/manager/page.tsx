@@ -17,14 +17,14 @@ const containerVariants: Variants = {
 
 const widgetVariants: Variants = {
   hidden: { opacity: 0, scale: 0.96, filter: "blur(6px)" },
-  show: { 
-    opacity: 1, 
-    scale: 1, 
-    filter: "blur(0px)", 
-    transition: { 
+  show: {
+    opacity: 1,
+    scale: 1,
+    filter: "blur(0px)",
+    transition: {
       ease: [0.22, 1, 0.36, 1] as any, // Cast to any to bypass transition ease type issues if they persist
-      duration: 0.8 
-    } 
+      duration: 0.8
+    }
   },
 };
 
@@ -42,7 +42,7 @@ export default function ManagerDashboard() {
   return (
     <div className="flex flex-col flex-1 p-8 md:p-12 max-w-[1400px] mx-auto w-full">
       <motion.div initial="hidden" animate="show" variants={containerVariants} className="space-y-10">
-        
+
         {/* Header */}
         <motion.div variants={widgetVariants} className="space-y-2">
           <h1 className="text-4xl md:text-5xl font-light tracking-tight text-neutral-100">Hiring Intelligence</h1>
@@ -51,18 +51,18 @@ export default function ManagerDashboard() {
 
         {/* Overview Stats */}
         <motion.div variants={widgetVariants} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-           <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2">
-              <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">Active Review pipeline</p>
-              <h4 className="text-3xl text-neutral-100 font-light tracking-tight">12 Candidates</h4>
-           </GlassCard>
-           <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2 border-emerald-500/20">
-              <p className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">High Match Velocity</p>
-              <h4 className="text-3xl text-emerald-400 font-light tracking-tight">4 Applicants</h4>
-           </GlassCard>
-           <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2 border-indigo-500/20">
-              <p className="text-[10px] text-indigo-400/70 font-bold uppercase tracking-widest">Intelligence Insights</p>
-              <h4 className="text-3xl text-indigo-100 font-light tracking-tight">Real-time</h4>
-           </GlassCard>
+          <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2">
+            <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">Active Review pipeline</p>
+            <h4 className="text-3xl text-neutral-100 font-light tracking-tight">12 Candidates</h4>
+          </GlassCard>
+          <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2 border-emerald-500/20">
+            <p className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">High Match Velocity</p>
+            <h4 className="text-3xl text-emerald-400 font-light tracking-tight">4 Applicants</h4>
+          </GlassCard>
+          <GlassCard className="p-8 rounded-[2rem] flex flex-col gap-2 border-indigo-500/20">
+            <p className="text-[10px] text-indigo-400/70 font-bold uppercase tracking-widest">Intelligence Insights</p>
+            <h4 className="text-3xl text-indigo-100 font-light tracking-tight">Real-time</h4>
+          </GlassCard>
         </motion.div>
 
         {/* Explainability Graph + Context */}
