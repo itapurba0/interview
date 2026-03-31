@@ -38,8 +38,8 @@ export function CandidateProfileView({
     const github = candidate.github || null;
     const linkedin = candidate.linkedin || null;
     const education = candidate.education?.education_list || [];
-    const projects = Array.isArray(candidate.projects) ? candidate.projects : [];
-    const experienceList = Array.isArray(candidate.experience) ? candidate.experience : [];
+    const projects = candidate.projects?.projects_list || [];
+    const experienceList = candidate.experience?.experience_list || [];
     const overallScore = candidate.overall_score || 0;
 
     const fadeInUp = {

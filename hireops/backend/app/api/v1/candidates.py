@@ -117,6 +117,8 @@ class CandidateProfileResponse(BaseModel):
     soft_skills: Optional[list[str]] = None
     experience_years: Optional[float] = None
     education: Optional[dict] = None
+    experience: Optional[dict] = None
+    projects: Optional[dict] = None
     overall_score: Optional[int] = None
     resume_text: Optional[str] = None
     github: Optional[str] = None
@@ -189,6 +191,8 @@ async def get_candidate_profile(
             soft_skills=None,
             experience_years=None,
             education=None,
+            experience=None,
+            projects=None,
             overall_score=None,
             resume_text=None,
             github=None,
@@ -206,6 +210,8 @@ async def get_candidate_profile(
         soft_skills=candidate.soft_skills,
         experience_years=candidate.experience_years,
         education=candidate.education,
+        experience=candidate.experience,
+        projects=candidate.projects,
         overall_score=candidate.overall_score,
         resume_text=candidate.resume_text,
         github=candidate.github,
@@ -259,6 +265,8 @@ async def get_candidate_by_id(
         soft_skills=candidate.soft_skills,
         experience_years=candidate.experience_years,
         education=candidate.education,
+        experience=candidate.experience,
+        projects=candidate.projects,
         overall_score=candidate.overall_score,
         resume_text=candidate.resume_text,
         github=candidate.github,
@@ -362,6 +370,32 @@ async def upload_and_parse_resume(
         ]
     }
     
+    # Store experience data
+    candidate.experience = {
+        "experience_list": [
+            {
+                "job_title": exp.job_title,
+                "company": exp.company,
+                "start_date": exp.start_date,
+                "end_date": exp.end_date,
+                "responsibilities": exp.responsibilities
+            }
+            for exp in parsed_data.experience
+        ]
+    } if parsed_data.experience else None
+    
+    # Store projects data
+    candidate.projects = {
+        "projects_list": [
+            {
+                "name": proj.name,
+                "description": proj.description,
+                "tech_stack": proj.tech_stack
+            }
+            for proj in parsed_data.projects
+        ]
+    } if parsed_data.projects else None
+    
     # Update user full_name if we extracted one
     if parsed_data.full_name and parsed_data.full_name.strip():
         if not current_user.full_name or current_user.full_name.lower() in ["user", "candidate", "unknown", ""]:
@@ -432,6 +466,12 @@ async def update_candidate_profile(
         candidate.soft_skills = payload.soft_skills
     if payload.years_of_experience is not None:
         candidate.experience_years = payload.years_of_experience
+    if payload.education is not None:
+        candidate.education = {"education_list": payload.education} if payload.education else None
+    if payload.experience is not None:
+        candidate.experience = {"experience_list": payload.experience} if payload.experience else None
+    if payload.projects is not None:
+        candidate.projects = {"projects_list": payload.projects} if payload.projects else None
     
     await db.commit()
     
@@ -446,6 +486,8 @@ async def update_candidate_profile(
         soft_skills=candidate.soft_skills,
         experience_years=candidate.experience_years,
         education=candidate.education,
+        experience=candidate.experience,
+        projects=candidate.projects,
         overall_score=candidate.overall_score,
         resume_text=candidate.resume_text,
         github=candidate.github,

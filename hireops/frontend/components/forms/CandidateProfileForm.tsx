@@ -124,6 +124,12 @@ export default function CandidateProfileForm({
         education?: {
             education_list?: EducationItem[];
         } | null;
+        experience?: {
+            experience_list?: ExperienceItem[];
+        } | null;
+        projects?: {
+            projects_list?: ProjectItem[];
+        } | null;
         resume_text?: string | null;
         github?: string | null;
         linkedin?: string | null;
@@ -168,6 +174,12 @@ export default function CandidateProfileForm({
             }
             if (data.education?.education_list && data.education.education_list.length > 0) {
                 setEducation(data.education.education_list);
+            }
+            if (data.experience?.experience_list && data.experience.experience_list.length > 0) {
+                setExperience(data.experience.experience_list);
+            }
+            if (data.projects?.projects_list && data.projects.projects_list.length > 0) {
+                setProjects(data.projects.projects_list);
             }
             if (data.resume_text) {
                 setHasExistingResume(true);

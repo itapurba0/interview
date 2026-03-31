@@ -12,31 +12,34 @@ export default function ProfilePage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [candidate, setCandidate] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch candidate profile on mount
+  // Fetch profile once on mount
   useEffect(() => {
-    let cancelled = false;
+    let isMounted = true;
 
     const fetchProfile = async () => {
-      setIsLoading(true);
       try {
-        // Add small delay to ensure auth is hydrated
-        await new Promise(resolve => setTimeout(resolve, 300));
+        setIsLoading(true);
+        setError(null);
 
-        if (cancelled) return;
+        // Add delay to ensure auth is hydrated from localStorage
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        if (!isMounted) return;
 
         const data = await fetchApi<any>("/api/v1/candidates/me");
-        if (!cancelled) {
+        if (isMounted) {
           setCandidate(data);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted) {
           console.error("Failed to fetch profile:", err);
-          // Set empty candidate state so we can show edit view
+          setError(err instanceof Error ? err.message : "Failed to load profile");
           setCandidate(null);
         }
       } finally {
-        if (!cancelled) {
+        if (isMounted) {
           setIsLoading(false);
         }
       }
@@ -45,9 +48,9 @@ export default function ProfilePage() {
     fetchProfile();
 
     return () => {
-      cancelled = true;
+      isMounted = false;
     };
-  }, []);
+  }, []); // Empty dependency array = fetch only once on mount
 
   const handleEditClick = () => {
     setIsEditMode(true);
@@ -56,7 +59,8 @@ export default function ProfilePage() {
   const handleEditComplete = () => {
     // Refresh profile data after edit
     setIsEditMode(false);
-    const fetchProfile = async () => {
+    // Fetch updated profile
+    const fetchUpdated = async () => {
       try {
         const data = await fetchApi<any>("/api/v1/candidates/me");
         setCandidate(data);
@@ -64,7 +68,7 @@ export default function ProfilePage() {
         console.error("Failed to refresh profile:", err);
       }
     };
-    fetchProfile();
+    fetchUpdated();
   };
 
   return (
@@ -98,6 +102,22 @@ export default function ProfilePage() {
               <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
               <p className="text-neutral-400">Loading profile...</p>
             </div>
+          </motion.div>
+        ) : error ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-900/20 border border-red-800/50 rounded-2xl p-8 text-center"
+          >
+            <p className="text-red-400 mb-6">Failed to load profile: {error}</p>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-all"
+            >
+              Retry
+            </motion.button>
           </motion.div>
         ) : isEditMode ? (
           <motion.div

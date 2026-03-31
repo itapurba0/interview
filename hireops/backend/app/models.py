@@ -80,6 +80,8 @@ class Candidate(Base):
     soft_skills: Mapped[Optional[List[str]]] = mapped_column(JSON)
     experience_years: Mapped[Optional[float]] = mapped_column()
     education: Mapped[Optional[dict]] = mapped_column(JSON)
+    experience: Mapped[Optional[dict]] = mapped_column(JSON)  # Store experience as JSON
+    projects: Mapped[Optional[dict]] = mapped_column(JSON)  # Store projects as JSON
     overall_score: Mapped[Optional[int]] = mapped_column(Integer)  # Parser score (0-100)
     
     # Social links from resume
