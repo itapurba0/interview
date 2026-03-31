@@ -227,3 +227,10 @@ flowchart TD
     API -->|TCP :6379| Cache
     Worker -->|TCP :6379| Cache
 ```
+
+---
+
+## 6. Risks, Limitations & Future Scope
+For a detailed analysis of project risks, current architectural limitations, and the strategic roadmap, please refer to the:
+[RISK_LIMITATION_SCOPE.md](file:///e:/Downloads/Developments/interview/hireops/RISK_LIMITATION_SCOPE.md)
+

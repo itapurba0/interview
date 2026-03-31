@@ -39,5 +39,7 @@ hireops/
 │   ├── lib/                       # API clients, Zustand stores
 │   └── hooks/                     # Custom React hooks
 │
+├── ARCHITECTURE.md                # System design & architecture
+├── RISK_LIMITATION_SCOPE.md       # Analysis of risks, limitations, and roadmap
 └── docker-compose.yml             # Postgres, Redis, Celery, App services
 ```
