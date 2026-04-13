@@ -18,7 +18,41 @@ services:
       timeout: 3s
       retries: 5
 
-  # 2. FastAPI REST / WebSocket Gateway
+  # 2. PostgreSQL Database (Local Development)
+  db:
+    image: postgres:15-alpine
+    container_name: hireops_db
+    restart: always
+    environment:
+      - POSTGRES_USER=hireops_user
+      - POSTGRES_PASSWORD=hireops_pass
+      - POSTGRES_DB=hireops_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hireops_user -d hireops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. pgAdmin (Database Management UI)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: hireops_pgadmin
+    restart: always
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@hireops.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  # 4. FastAPI REST / WebSocket Gateway
   api:
     build: 
       context: ./backend
@@ -31,6 +65,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - NODE_ENV=development
     ports:
       - "8000:8000"
     volumes:
@@ -38,9 +73,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      db:
+        condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # 3. Celery Base Processing Node (Resume NLP / Bulk Invites)
+  # 5. Celery Base Processing Node (Resume NLP / Bulk Invites)
   worker:
     build: 
       context: ./backend
@@ -52,6 +89,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - NODE_ENV=development
     volumes:
       - ./backend:/app
     depends_on:
@@ -61,7 +99,7 @@ services:
         condition: service_started
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4
 
-  # 4. LiveKit AI Voice Agent Worker
+  # 6. LiveKit AI Voice Agent Worker
   ai_worker:
     build:
       context: ./backend
@@ -72,6 +110,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - NODE_ENV=development
     volumes:
       - ./backend:/app
     depends_on:
@@ -83,3 +122,5 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
+  pgadmin_data:

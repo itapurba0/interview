@@ -442,13 +442,15 @@ export function ProctoringWrapper({
         </div>
       </div>
 
-      {/* ── Main Content Area (split: children + camera PiP) ── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: test content passed via children */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">{children}</div>
+      {/* ── Main Content Area ── */}
+      <div className="relative flex-1 overflow-hidden">
+        {/* Main test content */}
+        <div className="h-full overflow-y-auto custom-scrollbar">
+          {children}
+        </div>
 
-        {/* Right: floating camera PiP sidebar */}
-        <div className="w-[220px] shrink-0 border-l border-neutral-800/40 bg-neutral-950/50 p-4 flex flex-col gap-4">
+        {/* Floating camera PiP sidebar */}
+        <div className="absolute top-4 right-4 z-50 w-[220px] flex flex-col gap-4">
           {/* Camera Feed */}
           <div className="relative rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
             <video

@@ -148,17 +148,29 @@ async def ensure_application_assessment_columns(conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Asynchronous Table Creation
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await ensure_jobs_skills_column(conn)
-        await ensure_application_assessment_columns(conn)
+    # Initialize database connection and create tables if they don't exist
+    print("🔄 Connecting to database and initializing schema...")
+    try:
+        async with engine.begin() as conn:
+            # Create all tables defined in models.py
+            await conn.run_sync(Base.metadata.create_all)
+            print("✓ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠ Database initialization warning: {e}")
+        print("  App will continue - database operations will retry at request time")
     
-    # Check if a seed is needed
+    # Seed if in dev mode
     if os.getenv("NODE_ENV") != "production":
-        await seed_db()
-        
+        try:
+            await seed_db()
+            print("✓ Database seeded")
+        except Exception as e:
+            print(f"⚠ Seeding skipped: {e}")
+    
     yield
+    
+    # Cleanup
+    await engine.dispose()
 
 # Initialize FastAPI application
 app = FastAPI(

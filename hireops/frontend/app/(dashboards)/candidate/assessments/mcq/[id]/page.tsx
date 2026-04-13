@@ -43,6 +43,7 @@ export default function MCQTestPage({
     const [finalScore, setFinalScore] = useState(0);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
+    const [maxReachedIndex, setMaxReachedIndex] = useState(0);
 
     const storageKey = useMemo(
         () => `hireops_mcq_answers_${applicationId}`,
@@ -195,7 +196,11 @@ export default function MCQTestPage({
 
     const goNext = () => {
         if (currentIndex < totalQuestions - 1) {
-            setCurrentIndex((i) => i + 1);
+            const nextIdx = currentIndex + 1;
+            setCurrentIndex(nextIdx);
+            if (nextIdx > maxReachedIndex) {
+                setMaxReachedIndex(nextIdx);
+            }
         }
     };
     const goPrev = () => {
@@ -329,19 +334,19 @@ export default function MCQTestPage({
                                 : "You've completed the screening. Our team will review your results."}
                     </p>
 
-                    <div className="grid grid-cols-3 gap-4 mt-6">
-                        <div className="p-4 bg-neutral-800/40 border border-neutral-700/40 rounded-xl">
+                    <div className="grid grid-cols-3 gap-4 mt-6 text-center">
+                        <div className="p-4 bg-neutral-800/40 border border-neutral-700/40 rounded-xl flex flex-col items-center">
                             <p className="text-2xl font-bold text-indigo-400">{Math.round(finalScore)}%</p>
                             <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Score</p>
                         </div>
-                        <div className="p-4 bg-neutral-800/40 border border-neutral-700/40 rounded-xl">
+                        <div className="p-4 bg-neutral-800/40 border border-neutral-700/40 rounded-xl flex flex-col items-center">
                             <p className="text-2xl font-bold text-emerald-400">
                                 {correctCount}/{totalQuestions}
                             </p>
                             <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Correct</p>
                         </div>
                         <div
-                            className={`p-4 rounded-xl border ${violations > 0
+                            className={`p-4 rounded-xl border flex flex-col items-center ${violations > 0
                                 ? "bg-red-500/5 border-red-500/20"
                                 : "bg-neutral-800/40 border-neutral-700/40"
                                 }`}
@@ -351,30 +356,6 @@ export default function MCQTestPage({
                             </p>
                             <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Violations</p>
                         </div>
-                    </div>
-
-                    <div className="space-y-2 text-left mt-4">
-                        {questions.map((question, idx) => {
-                            const isCorrect = selectedAnswers[idx] === question.correct_answer;
-                            return (
-                                <div
-                                    key={idx}
-                                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm ${isCorrect
-                                        ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-300"
-                                        : "bg-red-500/5 border-red-500/20 text-red-300"
-                                        }`}
-                                >
-                                    {isCorrect ? (
-                                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                                    ) : (
-                                        <XCircle className="w-4 h-4 shrink-0" />
-                                    )}
-                                    <span className="truncate font-medium">
-                                        Q{idx + 1}: {question.question.length > 55 ? `${question.question.substring(0, 55)}…` : question.question}
-                                    </span>
-                                </div>
-                            );
-                        })}
                     </div>
 
                     {violations > 0 && (
@@ -415,7 +396,7 @@ export default function MCQTestPage({
             onViolation={handleViolationTick}
             onForceSubmit={handleSubmit}
         >
-            <div className="flex-1 flex items-center justify-center p-8">
+            <div className="min-h-screen flex items-center justify-center p-8 bg-neutral-950/20">
                 <div className="max-w-2xl w-full">
                     <div className="mb-6 flex items-center gap-4">
                         <div className="flex-1 h-1.5 bg-neutral-800/60 rounded-full overflow-hidden">
@@ -496,19 +477,22 @@ export default function MCQTestPage({
                             Previous
                         </motion.button>
 
-                        <div className="flex items-center gap-2">
-                            {questions.map((_, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => setCurrentIndex(idx)}
-                                    className={`w-3 h-3 rounded-full border transition-all ${idx === currentIndex
-                                        ? "bg-indigo-500 border-indigo-400 scale-125 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
-                                        : selectedAnswers[idx]
-                                            ? "bg-emerald-500/60 border-emerald-400/40"
-                                            : "bg-neutral-800 border-neutral-700"
-                                        }`}
-                                />
-                            ))}
+                        <div className="flex items-center justify-center gap-2 flex-1 mx-4 min-w-[240px]">
+                            {questions.map((_, idx) => {
+                                const isVisible = idx <= maxReachedIndex;
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => isVisible && setCurrentIndex(idx)}
+                                        className={`w-3 h-3 rounded-full border transition-all duration-300 ${idx === currentIndex
+                                            ? "bg-indigo-500 border-indigo-400 scale-125 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+                                            : selectedAnswers[idx]
+                                                ? "bg-emerald-500/60 border-emerald-400/40"
+                                                : "bg-neutral-800 border-neutral-700"
+                                            } ${!isVisible ? "opacity-0 scale-50 pointer-events-none" : "opacity-100 scale-100"}`}
+                                    />
+                                );
+                            })}
                         </div>
 
                         {currentIndex < totalQuestions - 1 ? (

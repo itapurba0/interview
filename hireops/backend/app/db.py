@@ -8,9 +8,14 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://hireops_user:enterprise_secure_password@localhost:5432/hireops_db",
 )
 
-# Automatic SSL detection for Neon/Cloud providers
+# Automatic SSL and connectivity settings
 connect_args = {}
-if "neon.tech" in DATABASE_URL or "aws.com" in DATABASE_URL:
+if "neon.tech" in DATABASE_URL:
+    connect_args["ssl"] = "require"
+elif "supabase.co" in DATABASE_URL:
+    # Supabase connection pooler setup
+    connect_args["ssl"] = "require"
+elif "aws.com" in DATABASE_URL:
     connect_args["ssl"] = True
 
 # Async engine with cloud-aware connectivity
