@@ -18,6 +18,8 @@ import { fetchApi } from "@/lib/api";
 import { ProctoringWrapper } from "@/components/assessment/ProctoringWrapper";
 
 const MAX_WARNINGS = 3;
+const TIME_LIMIT = 1200; // 20 minutes
+const TOTAL_QUESTIONS = 25;
 
 type MCQQuestion = {
     question: string;
@@ -37,7 +39,6 @@ export default function MCQTestPage({
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
     const [violations, setViolations] = useState(0);
-    const [isGenerating, setIsGenerating] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCompleted, setIsCompleted] = useState(false);
     const [finalScore, setFinalScore] = useState(0);
@@ -54,34 +55,23 @@ export default function MCQTestPage({
     const answeredCount = Object.keys(selectedAnswers).length;
     const currentQuestion = questions[currentIndex];
     const progressPercent =
-        totalQuestions === 0 ? 0 : ((currentIndex + 1) / totalQuestions) * 100;
+        TOTAL_QUESTIONS === 0 ? 0 : ((currentIndex + 1) / TOTAL_QUESTIONS) * 100;
 
-    // Fetch the AI-generated MCQ set
     useEffect(() => {
         let cancelled = false;
 
         const fetchTest = async () => {
-            setIsGenerating(true);
             setFetchError(null);
-
             try {
-                const [payload] = await Promise.all([
-                    fetchApi(`/api/v1/assessments/mcq/${applicationId}`),
-                    new Promise((resolve) => setTimeout(resolve, 4500)),
-                ]);
+                const payload: any = await fetchApi(`/api/v1/assessments/mcq/${applicationId}`);
                 if (cancelled) return;
                 const fetchedQuestions = payload.questions ?? [];
                 setQuestions(fetchedQuestions);
                 setCurrentIndex(0);
             } catch (err: unknown) {
                 if (cancelled) return;
-                const message =
-                    err instanceof Error ? err.message : "Unable to load your personalized test.";
+                const message = err instanceof Error ? err.message : "Unable to load your personalized test.";
                 setFetchError(message);
-            } finally {
-                if (!cancelled) {
-                    setIsGenerating(false);
-                }
             }
         };
 
@@ -209,28 +199,11 @@ export default function MCQTestPage({
         }
     };
 
-    if (isGenerating) {
+    if (!questions.length && !fetchError) {
         return (
-            <ProctoringWrapper
-                testName="MCQ Screening"
-                subtitle={`Application #${applicationId}`}
-                timeLimitSeconds={600}
-                maxWarnings={MAX_WARNINGS}
-                onViolation={handleViolationTick}
-                onForceSubmit={handleSubmit}
-            >
-                <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
-                    <div className="p-6 rounded-3xl bg-neutral-900/60 border border-neutral-800/60 shadow-lg">
-                        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-                    </div>
-                    <p className="mt-6 text-lg text-neutral-200 max-w-xl">
-                        ✨ AI is analyzing your resume and compiling your personalized 30-question assessment. This may take a minute...
-                    </p>
-                    {fetchError && (
-                        <p className="mt-3 text-sm text-amber-400">{fetchError}</p>
-                    )}
-                </div>
-            </ProctoringWrapper>
+            <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
+                <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+            </div>
         );
     }
 
@@ -339,12 +312,6 @@ export default function MCQTestPage({
                             <p className="text-2xl font-bold text-indigo-400">{Math.round(finalScore)}%</p>
                             <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Score</p>
                         </div>
-                        <div className="p-4 bg-neutral-800/40 border border-neutral-700/40 rounded-xl flex flex-col items-center">
-                            <p className="text-2xl font-bold text-emerald-400">
-                                {correctCount}/{totalQuestions}
-                            </p>
-                            <p className="text-[10px] text-neutral-500 uppercase tracking-widest mt-1">Correct</p>
-                        </div>
                         <div
                             className={`p-4 rounded-xl border flex flex-col items-center ${violations > 0
                                 ? "bg-red-500/5 border-red-500/20"
@@ -386,12 +353,11 @@ export default function MCQTestPage({
             </div>
         );
     }
-
     return (
         <ProctoringWrapper
             testName="MCQ Screening"
             subtitle={`Application #${applicationId}`}
-            timeLimitSeconds={600}
+            timeLimitSeconds={TIME_LIMIT}
             maxWarnings={MAX_WARNINGS}
             onViolation={handleViolationTick}
             onForceSubmit={handleSubmit}
@@ -407,7 +373,7 @@ export default function MCQTestPage({
                             />
                         </div>
                         <span className="text-xs text-neutral-500 font-bold tracking-wider shrink-0">
-                            {answeredCount}/{totalQuestions}
+                            {answeredCount}/{TOTAL_QUESTIONS}
                         </span>
                     </div>
 
@@ -423,7 +389,7 @@ export default function MCQTestPage({
                             >
                                 <div className="flex items-center justify-between mb-6">
                                     <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">
-                                        Question {currentIndex + 1}
+                                        Question {currentIndex + 1} of {TOTAL_QUESTIONS}
                                     </span>
                                     <span className="px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg text-[10px] font-bold tracking-widest">
                                         MCQ

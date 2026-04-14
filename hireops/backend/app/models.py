@@ -135,6 +135,7 @@ class Application(Base):
     ai_feedback: Mapped[Optional[str]] = mapped_column(Text)  # JSON or text feedback from AI
     voice_transcript: Mapped[Optional[str]] = mapped_column(Text)
     custom_mcq_data: Mapped[Optional[dict]] = mapped_column(JSON)
+    mcq_answers: Mapped[Optional[dict]] = mapped_column(JSON) # Store candidate's actual MCQ answers
     
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)

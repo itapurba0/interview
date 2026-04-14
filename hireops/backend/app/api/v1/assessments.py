@@ -80,12 +80,25 @@ async def backfill_pending_mcq_task(application_ids: list[int]) -> None:
                     continue
 
                 candidate_profile = getattr(application.candidate, "candidate_profile", None)
-                resume_summary = (candidate_profile.resume_text or "").strip() if candidate_profile else ""
+                res_sum = ""
+                if candidate_profile:
+                    res_sum = f"SUMMARY: {candidate_profile.professional_summary or 'See skills'}\n"
+                    res_sum += f"SKILLS: {', '.join(candidate_profile.technical_skills or [])}\n"
+                    res_sum += f"EXPERIENCE: {candidate_profile.experience}\n"
+                    res_sum += f"PROJECTS: {candidate_profile.projects}\n"
+                    res_sum += f"RAW TEXT: {candidate_profile.resume_text or ''}"
+                
+                resume_summary = res_sum.strip()
                 job_skills_list = application.job.skills or [] if application.job else []
                 job_skills = ", ".join(job_skills_list)
                 job_title = application.job.title if application.job else "General Technical Role"
 
                 mcq_payload = await generate_custom_mcq(resume_summary, job_title, job_skills)
+                
+                # Safety Guard: Strictly cap at 25 questions
+                if mcq_payload.get("questions"):
+                    mcq_payload["questions"] = mcq_payload["questions"][:25]
+
                 application.custom_mcq_data = mcq_payload
                 await session.commit()
                 logger.info("Backfilled MCQ for application %s", application_id)
@@ -326,12 +339,25 @@ async def get_custom_mcq(
         }
 
     candidate_profile = getattr(application.candidate, "candidate_profile", None)
-    resume_summary = (candidate_profile.resume_text or "").strip() if candidate_profile else ""
+    res_sum = ""
+    if candidate_profile:
+        res_sum = f"SUMMARY: {candidate_profile.professional_summary or 'See skills'}\n"
+        res_sum += f"SKILLS: {', '.join(candidate_profile.technical_skills or [])}\n"
+        res_sum += f"EXPERIENCE: {candidate_profile.experience}\n"
+        res_sum += f"PROJECTS: {candidate_profile.projects}\n"
+        res_sum += f"RAW TEXT: {candidate_profile.resume_text or ''}"
+    
+    resume_summary = res_sum.strip()
     job_title = application.job.title if application.job else "General Technical Role"
     job_skills_list = application.job.skills or [] if application.job else []
     job_skills = ", ".join(job_skills_list)
 
     mcq_payload = await generate_custom_mcq(resume_summary, job_title, job_skills)
+    
+    # Safety Guard: Strictly cap at 25 questions
+    if mcq_payload.get("questions"):
+        mcq_payload["questions"] = mcq_payload["questions"][:25]
+        
     application.custom_mcq_data = mcq_payload
     await db.commit()
 
@@ -367,15 +393,32 @@ async def submit_custom_mcq(
 
     for idx, question in enumerate(questions):
         submitted_answer = payload.answers.get(idx)
-        normalized_answer = _normalize_choice(submitted_answer)
+        
+        # Smat matching: Try to resolve what the AI meant by 'correct_answer'
         resolved_correct_answer = _resolve_correct_answer(question)
+        
+        normalized_answer = _normalize_choice(submitted_answer)
         normalized_correct_answer = _normalize_choice(resolved_correct_answer)
 
-        if normalized_answer and normalized_correct_answer and normalized_answer == normalized_correct_answer:
+        is_match = (
+            normalized_answer is not None 
+            and normalized_correct_answer is not None 
+            and normalized_answer == normalized_correct_answer
+        )
+
+        if is_match:
             correct += 1
+            
+        logger.info(
+            "[MCQ DEBUG] App %s | Q%s: User='%s' | AI='%s' | Match: %s",
+            application_id, idx, submitted_answer, resolved_correct_answer, is_match
+        )
 
     score = round((correct / mcq_total) * 100) if mcq_total else 0
     application.mcq_score = score
+    application.mcq_answers = payload.answers  # Save actual answers for re-grading/audit
+    
+    # Keep status as TEST_PENDING until coding test is also done
     application.status = ApplicationStatus.TEST_PENDING
     await db.commit()
 

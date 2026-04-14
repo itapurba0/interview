@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, Suspense } from "react";
+import { useMemo, Suspense, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, Variants } from "framer-motion";
 import {
@@ -16,7 +16,11 @@ import {
     Calendar,
     Mic,
     ShieldCheck,
+    Bot,
+    Sparkles,
+    BrainCircuit,
 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import useSWR from "swr";
 import { swrFetcher } from "@/lib/api";
 
@@ -76,10 +80,11 @@ const cardVariants: Variants = {
 // ---------------------------------------------------------------------------
 // Assessment Status Card
 // ---------------------------------------------------------------------------
-function AssessmentCard({ application, jobData, onStartTest }: {
+function AssessmentCard({ application, jobData, onStartTest, isGenerating }: {
     application: Application;
     jobData: Job | null;
     onStartTest: (type: "mcq" | "coding" | "voice", applicationId: number) => void;
+    isGenerating: boolean;
 }) {
     const statusColors: Record<string, { bg: string; border: string; text: string; icon: React.ReactNode }> = {
         TEST_PENDING: {
@@ -203,14 +208,22 @@ function AssessmentCard({ application, jobData, onStartTest }: {
                 <div className="flex items-center gap-2">
                     {!isMcqDone && (
                         <motion.button
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.97 }}
-                            onClick={() => onStartTest("mcq", application.id)}
-                            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400 transition-all whitespace-nowrap"
+                            whileHover={{ scale: isGenerating ? 1 : 1.03 }}
+                            whileTap={{ scale: isGenerating ? 1 : 0.97 }}
+                            onClick={() => !isGenerating && onStartTest("mcq", application.id)}
+                            disabled={isGenerating}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${isGenerating
+                                ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                                : "bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400"
+                                }`}
                         >
-                            <FlaskConical className="w-4 h-4" />
-                            Start MCQ Screening
-                            <ChevronRight className="w-4 h-4 opacity-60" />
+                            {isGenerating ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                            ) : (
+                                <FlaskConical className="w-4 h-4" />
+                            )}
+                            {isGenerating ? "Generating..." : "Start MCQ Screening"}
+                            {!isGenerating && <ChevronRight className="w-4 h-4 opacity-60" />}
                         </motion.button>
                     )}
 
@@ -264,11 +277,79 @@ function AssessmentCard({ application, jobData, onStartTest }: {
     );
 }
 
+function GenerationOverlay({ applicationId }: { applicationId: number }) {
+    const [step, setStep] = useState(0);
+    const steps = [
+        "Analyzing your resume and past projects...",
+        "Identifying key technical competencies...",
+        "Generating job-specific scenario questions...",
+        "Finalizing your personalized assessment...",
+    ];
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setStep((s) => (s < steps.length - 1 ? s + 1 : s));
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [steps.length]);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-neutral-950/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center"
+        >
+            <div className="relative mb-12">
+                <motion.div
+                    animate={{ 
+                        scale: [1, 1.1, 1],
+                        opacity: [0.6, 1, 0.6] 
+                    }}
+                    transition={{ duration: 3, repeat: Infinity }}
+                    className="absolute -inset-8 bg-indigo-500/20 rounded-full blur-3xl"
+                />
+                <div className="relative p-8 rounded-3xl bg-neutral-900 border border-neutral-800 shadow-2xl">
+                    <BrainCircuit className="w-16 h-16 text-indigo-500 animate-pulse" />
+                </div>
+                <div className="absolute top-0 right-0 p-2 bg-emerald-500 rounded-full animate-bounce shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+                    <Sparkles className="w-4 h-4 text-white" />
+                </div>
+            </div>
+
+            <motion.div 
+                key={step}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4 max-w-md"
+            >
+                <h2 className="text-2xl font-semibold text-neutral-100 tracking-tight">
+                    Generating Your Assessment
+                </h2>
+                <div className="flex items-center justify-center gap-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                    <p className="text-neutral-400 font-light text-lg">
+                        {steps[step]}
+                    </p>
+                </div>
+            </motion.div>
+
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-neutral-900/50 border border-neutral-800/50 rounded-full">
+                <Bot className="w-4 h-4 text-neutral-500" />
+                <span className="text-xs text-neutral-500 uppercase tracking-widest font-bold">
+                    HireOps AI Engine v2.0
+                </span>
+            </div>
+        </motion.div>
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Main Assessment Hub
 // ---------------------------------------------------------------------------
 function AssessmentHubContent() {
     const router = useRouter();
+    const [generatingId, setGeneratingId] = useState<number | null>(null);
 
     // SWR: fetch once, cache globally across tab switches
     const { data: rawApps, isLoading, error } = useSWR<Application[]>(
@@ -296,9 +377,20 @@ function AssessmentHubContent() {
     }, [applications]);
 
     // Handle test start
-    const handleStartTest = (type: "mcq" | "coding" | "voice", applicationId: number) => {
+    const handleStartTest = async (type: "mcq" | "coding" | "voice", applicationId: number) => {
         if (type === "mcq") {
-            router.push(`/candidate/assessments/mcq/${applicationId}`);
+            try {
+                setGeneratingId(applicationId);
+                // Call the API to trigger generation
+                // This will wait for the AI to generate questions before navigating
+                await swrFetcher(`/api/v1/assessments/mcq/${applicationId}`);
+                router.push(`/candidate/assessments/mcq/${applicationId}`);
+            } catch (err) {
+                console.error("Failed to generate MCQ:", err);
+                alert("Generation failed. Please try again.");
+            } finally {
+                setGeneratingId(null);
+            }
         } else if (type === "voice") {
             router.push(`/candidate/assessments/voice/${applicationId}`);
         } else {
@@ -350,6 +442,10 @@ function AssessmentHubContent() {
 
     return (
         <div className="flex flex-col flex-1 p-8 md:p-12 max-w-6xl mx-auto w-full">
+            <AnimatePresence>
+                {generatingId && <GenerationOverlay applicationId={generatingId} />}
+            </AnimatePresence>
+            
             <motion.div initial="hidden" animate="show" variants={containerVariants} className="space-y-10">
                 {/* Header */}
                 <motion.div variants={cardVariants} className="space-y-2">
@@ -380,6 +476,7 @@ function AssessmentHubContent() {
                                         application={app}
                                         jobData={jobs[app.job_id] || null}
                                         onStartTest={handleStartTest}
+                                        isGenerating={generatingId === app.id}
                                     />
                                 ))}
                         </motion.div>

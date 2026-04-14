@@ -120,7 +120,7 @@ export function JobCard({
             whileTap={{ scale: 0.97 }}
             onClick={(e) => {
               e.stopPropagation();
-              onNavigate(`/candidate/application/${job.id}`);
+              onNavigate("/candidate/assessment");
             }}
             className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/25 transition-all"
           >

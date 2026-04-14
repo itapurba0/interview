@@ -14,7 +14,7 @@ export default function HomePage() {
         <Link href="/login" className="px-6 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-all">
           Get Started
         </Link>
-        <Link href="/candidate/assessment/demo" className="px-6 py-3 rounded-lg border border-input bg-background font-semibold hover:bg-accent transition-all">
+        <Link href="/candidate/assessment/demo" className="px-6 py-3 rounded-lg border border-neutral-800 bg-white/5 backdrop-blur-sm text-neutral-300 font-semibold hover:bg-white/10 hover:text-white transition-all">
           View Demo Assessment
         </Link>
       </div>

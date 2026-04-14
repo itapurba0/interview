@@ -94,6 +94,16 @@ async def seed_db():
             session.add(app)
         
         await session.commit()
+        # Reset PostgreSQL sequences to match seeded IDs
+        tables = ["users", "companies", "jobs", "applications"]
+        for table in tables:
+            try:
+                # PostgreSQL command to sync the sequence with the max ID
+                await session.execute(text(f"SELECT setval('{table}_id_seq', (SELECT MAX(id) FROM {table}))"))
+            except Exception as e:
+                print(f"Warning: Could not sync sequence for {table}: {e}")
+                
+        await session.commit()
         print("✅ SEEDING COMPLETE: Created hr@hireops.com / password123")
         print(f"✅ Created {len(candidate_users)} sample candidates")
         print(f"✅ Created 1 React Developer job")
@@ -184,23 +194,21 @@ app = FastAPI(
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
     "http://localhost",
     "http://127.0.0.1",
+    "http://0.0.0.0:3000",
 ]
 
 # Standard Security Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"http://localhost:.*", # Support any local port
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Accept",
-        "Origin",
-    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
     expose_headers=["Content-Type", "Authorization"],
     max_age=3600,
 )

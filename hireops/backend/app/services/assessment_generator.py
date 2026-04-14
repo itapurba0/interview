@@ -19,15 +19,19 @@ async def generate_custom_mcq(
     job_title: str,
     job_skills: str,
 ) -> Dict[str, Any]:
-    """Generate a candidate-specific 30-question MCQ assessment via OpenRouter."""
+    """Generate a candidate-specific 25-question MCQ assessment via OpenRouter."""
     system_prompt = (
-        "You are an expert technical interviewer. Generate exactly 30 multiple-choice questions.\n"
-        "You MUST return ONLY a valid JSON object matching this exact schema:\n"
-        "{\"questions\": [{\"question\": \"...\", \"options\": [\"A\", \"B\", \"C\", \"D\"], \"correct_answer\": \"...\", \"explanation\": \"...\"}]}"
+        "You are an expert technical interviewer. Generate EXACTLY 25 multiple-choice questions. No more and no less.\n"
+        "Your response MUST be a valid JSON object with exactly 25 items in the 'questions' array.\n"
+        "IMPORTANT: The 'question' text MUST NOT include question numbers (e.g. '1. ', 'Question 1:'). Just provide the plain question text.\n"
+        "JSON Schema: {\"questions\": [{\"question\": \"...\", \"options\": [\"A\", \"B\", \"C\", \"D\"], \"correct_answer\": \"...\", \"explanation\": \"...\"}]}"
     )
     user_prompt = (
-        f"Role: {job_title}. Required Skills: {job_skills}. Candidate Summary: {resume_summary}."
-        " Create 15 deep technical questions and 15 scenario questions."
+        f"Role: {job_title}. Required Skills: {job_skills}.\n"
+        f"Candidate Background:\n{resume_summary}\n\n"
+        "TASK:\n"
+        "1. Create 13 deep technical questions specifically tailored to the required skills and the candidate's stated skill level.\n"
+        "2. Create 12 scenario-based questions. These MUST be derived from the candidate's specific PROJECTS and EXPERIENCE mentioned in their background summary."
     )
 
     for attempt in range(1, MAX_RETRIES + 1):

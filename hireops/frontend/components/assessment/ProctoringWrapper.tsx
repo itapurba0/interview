@@ -444,8 +444,8 @@ export function ProctoringWrapper({
 
       {/* ── Main Content Area ── */}
       <div className="relative flex-1 overflow-hidden">
-        {/* Main test content */}
-        <div className="h-full overflow-y-auto custom-scrollbar">
+        {/* Main test content - with right padding to clear the floating sidebar */}
+        <div className="h-full overflow-y-auto custom-scrollbar pr-[260px] md:pr-[280px]">
           {children}
         </div>
 
