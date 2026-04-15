@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion, Variants } from "framer-motion";
-import { Plus, Search, RefreshCw, LayoutGrid, Filter } from "lucide-react";
+import { motion, Variants, AnimatePresence } from "framer-motion";
+import { Plus, Search, RefreshCw, LayoutGrid, Filter, Briefcase, Building } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
 import { ActiveJobCard } from "@/components/hr/ActiveJobCard";
 import { SummaryStatistics } from "@/components/hr/SummaryStatistics";
 import { CreateJobModal } from "@/components/hr/CreateJobModal";
 import { JobDetailsModal } from "@/components/shared/JobDetailsModal";
+import { JoinCodeCard } from "@/components/hr/JoinCodeCard";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,13 @@ interface HRJob {
   applicant_count: number;
   interviews_pending: number;
   date_posted: string;
+}
+
+interface HRCompany {
+  id: number;
+  name: string;
+  description: string;
+  join_code: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +57,8 @@ const fadeSlideUp: Variants = {
 // ---------------------------------------------------------------------------
 export default function HRDashboard() {
   const [jobs, setJobs] = useState<HRJob[]>([]);
+  const [company, setCompany] = useState<HRCompany | null>(null);
+  const [activeTab, setActiveTab] = useState<"roles" | "company">("roles");
   const [isLoading, setIsLoading] = useState(true);
   const [showJobModal, setShowJobModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<HRJob | null>(null);
@@ -68,11 +78,19 @@ export default function HRDashboard() {
     }
   }, []);
 
+  const fetchMyCompany = useCallback(async () => {
+    try {
+      const data = await fetchApi<HRCompany>("/api/v1/auth/companies/me");
+      setCompany(data);
+    } catch (err) {
+      console.error("Failed to fetch company details:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchJobs();
-    // Load jobs once on mount - no automatic polling
-    // Use manual refresh button to get latest data
-  }, [fetchJobs]);
+    fetchMyCompany();
+  }, [fetchJobs, fetchMyCompany]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -131,7 +149,7 @@ export default function HRDashboard() {
                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
              </motion.button>
 
-             <motion.button
+              <motion.button
                whileHover={{ scale: 1.02 }}
                whileTap={{ scale: 0.98 }}
                onClick={() => setShowJobModal(true)}
@@ -143,14 +161,46 @@ export default function HRDashboard() {
           </div>
         </motion.div>
 
-        {/* Global Statistics */}
-        <motion.div variants={fadeSlideUp}>
-          <SummaryStatistics 
-            totalJobs={jobs.length}
-            totalApplicants={totalApplicants}
-            pendingInterviews={totalInterviews}
-          />
+        {/* Navigation Tabs */}
+        <motion.div variants={fadeSlideUp} className="flex gap-4 border-b border-neutral-800/60 pb-px">
+           <button
+             onClick={() => setActiveTab("roles")}
+             className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === "roles" ? "border-indigo-500 text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"}`}
+           >
+             <div className="flex items-center gap-2 px-2">
+               <Briefcase className="w-4 h-4" />
+               Active Roles
+             </div>
+           </button>
+           <button
+             onClick={() => setActiveTab("company")}
+             className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === "company" ? "border-indigo-500 text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"}`}
+           >
+             <div className="flex items-center gap-2 px-2">
+               <Building className="w-4 h-4" />
+               Workspace Settings
+             </div>
+           </button>
         </motion.div>
+
+        <AnimatePresence mode="wait">
+          {activeTab === "roles" ? (
+            <motion.div 
+              key="roles-tab" 
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -10 }} 
+              transition={{ duration: 0.2 }}
+              className="space-y-12"
+            >
+              {/* Workspace Operations & Statistics */}
+              <motion.div variants={fadeSlideUp}>
+                <SummaryStatistics 
+                  totalJobs={jobs.length}
+                  totalApplicants={totalApplicants}
+                  pendingInterviews={totalInterviews}
+                />
+              </motion.div>
 
         {/* Jobs Grid Section */}
         <motion.div variants={fadeSlideUp} className="space-y-6">
@@ -178,18 +228,59 @@ export default function HRDashboard() {
                 ))}
              </div>
            ) : (
-             <div className="py-20 flex flex-col items-center justify-center border border-dashed border-neutral-800 rounded-[2rem] text-neutral-600 space-y-4">
-                <div className="w-16 h-16 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center">
-                   <Plus className="w-8 h-8 opacity-20" />
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-light">No active roles found.</p>
-                  <p className="text-sm">Post a job to begin building your intelligence pipeline.</p>
-                </div>
-             </div>
-           )}
+               <div className="py-20 flex flex-col items-center justify-center border border-dashed border-neutral-800 rounded-[2rem] text-neutral-600 space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center">
+                     <Plus className="w-8 h-8 opacity-20" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-light">No active roles found.</p>
+                    <p className="text-sm">Post a job to begin building your intelligence pipeline.</p>
+                  </div>
+               </div>
+             )}
+          </motion.div>
         </motion.div>
-      </motion.div>
+        ) : (
+          <motion.div 
+            key="company-tab" 
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -10 }} 
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-1 xl:grid-cols-3 gap-6 pt-4"
+          >
+            <div className="xl:col-span-2 space-y-6">
+               <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-8 shadow-sm">
+                 <h2 className="text-xl font-semibold text-neutral-100 mb-8 flex items-center gap-2">
+                   <Building className="w-5 h-5 text-indigo-400" />
+                   Workspace Information
+                 </h2>
+                 {company ? (
+                   <div className="space-y-8">
+                     <div>
+                       <label className="block text-xs font-bold uppercase tracking-widest text-neutral-500 mb-2.5">Company Name</label>
+                       <div className="text-xl font-medium text-neutral-200">{company.name}</div>
+                     </div>
+                     <div>
+                       <label className="block text-xs font-bold uppercase tracking-widest text-neutral-500 mb-2.5">Workspace Origin</label>
+                       <p className="text-sm text-neutral-400 leading-relaxed max-w-2xl">{company.description}</p>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="text-sm border border-neutral-800 bg-neutral-900/50 p-6 rounded-xl flex items-center gap-3 text-neutral-400">
+                     <RefreshCw className="w-4 h-4 animate-spin" />
+                     Loading company metadata securely...
+                   </div>
+                 )}
+               </div>
+            </div>
+            <div className="xl:col-span-1">
+               <JoinCodeCard joinCode={company?.join_code || "LOADING..."} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
 
       <CreateJobModal 
         isOpen={showJobModal} 

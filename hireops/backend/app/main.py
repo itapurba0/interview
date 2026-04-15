@@ -1,6 +1,8 @@
 import os
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from sqlalchemy import text
@@ -156,6 +158,30 @@ async def ensure_application_assessment_columns(conn):
                 text(f"ALTER TABLE applications ADD COLUMN {column_name} {sql_type}")
             )
 
+async def ensure_company_join_code_column(conn):
+    """Add the join_code column to the legacy companies table if it is missing."""
+    column_check = await conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = :table AND column_name = :column
+            LIMIT 1
+            """
+        ),
+        {"table": "companies", "column": "join_code"},
+    )
+
+    if column_check.scalar_one_or_none() is None:
+        try:
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN join_code VARCHAR(20)"))
+            # Backfill existing entities
+            await conn.execute(text("UPDATE companies SET join_code = 'HIRE-' || substr(md5(random()::text), 1, 6) WHERE join_code IS NULL"))
+            await conn.execute(text("ALTER TABLE companies ADD CONSTRAINT uq_companies_join_code UNIQUE (join_code)"))
+            print("✓ Injected 'join_code' column into companies table")
+        except Exception as e:
+            print(f"⚠ Could not append join_code column: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database connection and create tables if they don't exist
@@ -164,6 +190,7 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             # Create all tables defined in models.py
             await conn.run_sync(Base.metadata.create_all)
+            await ensure_company_join_code_column(conn)
             print("✓ Database initialized successfully")
     except Exception as e:
         print(f"⚠ Database initialization warning: {e}")
@@ -212,6 +239,35 @@ app.add_middleware(
     expose_headers=["Content-Type", "Authorization"],
     max_age=3600,
 )
+
+# Set up logging for the Global Exception Handler
+logger = logging.getLogger(__name__)
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Allow intentional, handled API exceptions (e.g., 400 Bad Request, 404 Not Found)
+    to cleanly return their defined error details to the client instead of being
+    caught by the global unhandled exception mask.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=exc.headers
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all barrier to prevent stack traces or data leaks (like DB credentials,
+    unhandled KeyError contexts) from hitting the frontend.
+    The complete traceback is logged for server observability.
+    """
+    logger.exception(f"Unhandled Application Error on {request.method} {request.url}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "status_code": 500}
+    )
 
 @app.get("/health")
 def read_health():

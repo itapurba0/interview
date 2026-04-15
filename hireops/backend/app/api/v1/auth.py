@@ -11,6 +11,7 @@ from passlib.context import CryptContext
 from app.db import get_db
 from app.models import User, UserRole, Company, Candidate
 from pydantic import BaseModel, EmailStr
+from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -20,6 +21,7 @@ class RegisterRequest(BaseModel):
     full_name: str
     role: str = "CANDIDATE"
     company_name: Optional[str] = None
+    join_code: Optional[str] = None
 
 # Configuration for SaaS JWT Issuance
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "hireops_dev_secret_2026_xyz")
@@ -65,14 +67,14 @@ async def register_candidate(
     Creates a new global candidate or tenant-scoped HR/Manager account.
     """
     user_role = payload.role.strip().upper()
-    tenant_roles = {UserRole.HR.value, UserRole.MANAGER.value}
-    if user_role not in {UserRole.CANDIDATE.value, *tenant_roles}:
+    valid_roles = {UserRole.CANDIDATE.value, UserRole.HR.value, UserRole.MANAGER.value}
+    if user_role not in valid_roles:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role must be CANDIDATE, HR, or MANAGER."
         )
 
-    # 1. Check existing
+    # 1. Check existing email
     result = await db.execute(select(User).where(User.email == payload.email))
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -81,16 +83,44 @@ async def register_candidate(
         )
 
     company_id = None
-    if user_role in tenant_roles:
+    
+    # 2. Handle Multi-Tenant Logic
+    if user_role == UserRole.HR.value:
         if not payload.company_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Company name required for HR/Manager registration."
+                detail="Company name required for HR registration."
             )
+        # Verify company name isn't taken
+        comp_result = await db.execute(select(Company).where(Company.name == payload.company_name))
+        if comp_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Company name is already taken."
+            )
+        # Create new company
         new_company = Company(name=payload.company_name)
         db.add(new_company)
-        await db.flush()
+        await db.flush() # Flush to let database set the ID and uniquely generated join_code
         company_id = new_company.id
+
+    elif user_role == UserRole.MANAGER.value:
+        if not payload.join_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Join code required for Manager registration."
+            )
+        # Lookup company by code securely
+        comp_result = await db.execute(select(Company).where(Company.join_code == payload.join_code))
+        existing_company = comp_result.scalar_one_or_none()
+        
+        if not existing_company:
+            # Prevents blind enumeration or code guessing
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid join code. Company not found."
+            )
+        company_id = existing_company.id
 
     # 2. Hash and Create User
     new_user = User(
@@ -172,4 +202,30 @@ async def login_for_access_token(
     return {
         "access_token": access_token,
         "token_type": "bearer"
+    }
+
+@router.get("/companies/me")
+async def get_my_company(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch the authenticated user's assigned company details."""
+    if not current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User is not linked to any company workspace."
+        )
+    result = await db.execute(select(Company).where(Company.id == current_user.company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Company not found."
+        )
+    return {
+        "id": company.id,
+        "name": company.name,
+        "description": company.description or f"{company.name} workspace.",
+        "join_code": company.join_code,
+        "created_at": company.created_at.isoformat() if company.created_at else None
     }

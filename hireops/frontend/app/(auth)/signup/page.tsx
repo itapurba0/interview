@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Loader2, Mail, Lock, User, Building, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Lock, User, Building, ArrowRight, KeyRound } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -26,6 +26,8 @@ export default function SignupPage() {
 
   // Employer specific state
   const [companyName, setCompanyName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  
   const roleOptions = ["CANDIDATE", "HR", "MANAGER"] as const;
   const isEmployer = role !== "CANDIDATE";
 
@@ -42,8 +44,10 @@ export default function SignupPage() {
       role: payloadRole,
     };
 
-    if (isEmployer) {
+    if (payloadRole === "HR") {
       payload.company_name = companyName;
+    } else if (payloadRole === "MANAGER") {
+      payload.join_code = joinCode;
     }
 
     let registrationData: RegisterResponse | null = null;
@@ -153,23 +157,41 @@ export default function SignupPage() {
               transition={{ duration: 0.2 }}
               className="space-y-4 pb-1"
             >
-              {/* Company Input */}
-              <div className="space-y-2 relative">
-                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                  Company Name
-                </label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-3 h-5 w-5 text-zinc-600" />
-                  <input
-                    type="text"
-                    required={isEmployer}
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-600 focus:border-transparent transition-all"
-                    placeholder="Acme Corp"
-                  />
+              {role === "HR" ? (
+                <div className="space-y-2 relative">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Company Name
+                  </label>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-3 h-5 w-5 text-zinc-600" />
+                    <input
+                      type="text"
+                      required
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-600 focus:border-transparent transition-all"
+                      placeholder="Acme Corp"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-2 relative">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Company Join Code
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-3 h-5 w-5 text-zinc-600" />
+                    <input
+                      type="text"
+                      required
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-600 focus:border-transparent transition-all uppercase font-mono"
+                      placeholder="HIRE-XXXXXX"
+                    />
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
 

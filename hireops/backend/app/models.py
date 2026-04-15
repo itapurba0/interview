@@ -1,5 +1,7 @@
 from datetime import datetime
 import enum
+import string
+import random
 from typing import Optional, List
 
 from sqlalchemy import String, Text, ForeignKey, Enum, Integer, DateTime, Boolean, JSON
@@ -26,6 +28,11 @@ class UserRole(str, enum.Enum):
     MANAGER = "MANAGER"                        # Tenant-scoped
     ADMIN = "ADMIN"
 
+def generate_join_code() -> str:
+    """Generate a random 6-character alphanumeric join code."""
+    chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    return f"HIRE-{chars}"
+
 class Company(Base):
     """
     Tenant entity. Isolates all Jobs, HR/Managers, and data.
@@ -34,6 +41,7 @@ class Company(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    join_code: Mapped[str] = mapped_column(String(20), unique=True, index=True, default=generate_join_code)
     description: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 

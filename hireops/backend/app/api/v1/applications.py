@@ -380,6 +380,54 @@ async def get_user_applications(
         return [ApplicationHROut.model_validate(app) for app in applications]
 
 
+@router.get("/applications/{application_id}")
+async def get_application_details(
+    application_id: int,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve application + scorecard, strictly protected against IDOR.
+    """
+    # Fetch application and eagerly load required relations
+    result = await db.execute(
+        select(Application)
+        .options(
+            joinedload(Application.job).joinedload(Job.company),
+            joinedload(Application.candidate).joinedload(User.candidate_profile)
+        )
+        .where(Application.id == application_id)
+    )
+    application = result.scalar_one_or_none()
+
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found."
+        )
+
+    # Cross-check Ownership (IDOR Prevention)
+    if current_user.role.value == "CANDIDATE":
+        if application.candidate_id != current_user.id:
+            logger.warning(f"IDOR Attempt blocked: User {current_user.id} tried to access App {application_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view this application."
+            )
+        return ApplicationWithJobOut.model_validate(application)
+            
+    elif current_user.role.value in ["HR", "MANAGER"]:
+        if not application.job or application.job.company_id != current_user.company_id:
+            logger.warning(f"IDOR Attempt blocked: HR {current_user.id} tried to access App {application_id} for different company")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This application does not belong to your company."
+            )
+        return ApplicationHROut.model_validate(application)
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+
 @router.patch("/applications/{application_id}/mcq", response_model=ApplicationOut)
 async def update_mcq_score(
     application_id: int,
